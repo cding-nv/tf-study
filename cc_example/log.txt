@@ -1,0 +1,46 @@
+cding@tsestation:~/study/tf_test/TF-TRT_CC/example$ ./test ./mnist_frozen_graph.pb ArgMax,Softmax                                   2019-09-30 10:19:16.651675: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcuda.so.1
+2019-09-30 10:19:16.697893: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1618] Found device 0 with properties: 
+name: Tesla P4 major: 6 minor: 1 memoryClockRate(GHz): 1.1135
+pciBusID: 0000:ae:00.0
+2019-09-30 10:19:16.698202: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcudart.so.10.1
+2019-09-30 10:19:16.700596: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcublas.so.10
+2019-09-30 10:19:16.702832: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcufft.so.10
+2019-09-30 10:19:16.703229: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcurand.so.10
+2019-09-30 10:19:16.705739: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcusolver.so.10
+2019-09-30 10:19:16.707267: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcusparse.so.10
+2019-09-30 10:19:16.712395: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcudnn.so.7
+2019-09-30 10:19:16.714993: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1746] Adding visible gpu devices: 0
+2019-09-30 10:19:16.715035: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcudart.so.10.1
+2019-09-30 10:19:16.838963: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1159] Device interconnect StreamExecutor with strength 1 edge matrix:
+2019-09-30 10:19:16.839002: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1165]      0 
+2019-09-30 10:19:16.839020: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1178] 0:   N 
+2019-09-30 10:19:16.842724: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1304] Created TensorFlow device (/job:localhost/replica:0/task:0/device:GPU:0 with 7189 MB memory) -> physical GPU (device: 0, name: Tesla P4, pci bus id: 0000:ae:00.0, compute capability: 6.1)
+Origin graph has 44 nodes in total
+2019-09-30 10:19:17.024207: W tensorflow/core/grappler/optimizers/generic_layout_optimizer.cc:395] generic layout optimizer was called with cluster == nullptr
+2019-09-30 10:19:17.078000: I tensorflow/compiler/tf2tensorrt/segment/segment.cc:460] There are 9 ops of 8 different types in the graph that are not converted to TensorRT: ArgMax, Softmax, Placeholder, NoOp, Pack, Shape, StridedSlice, Reshape, (For more information see https://docs.nvidia.com/deeplearning/frameworks/tf-trt-user-guide/index.html#supported-ops).
+2019-09-30 10:19:17.078298: I tensorflow/compiler/tf2tensorrt/convert/convert_graph.cc:633] Number of TensorRT candidate segments: 2
+2019-09-30 10:19:17.119657: I tensorflow/compiler/tf2tensorrt/convert/convert_graph.cc:734] TensorRT node TRTEngineOp_0 added for segment 0 consisting of 14 nodes succeeded.
+2019-09-30 10:19:17.119852: I tensorflow/compiler/tf2tensorrt/convert/convert_graph.cc:734] TensorRT node TRTEngineOp_1 added for segment 1 consisting of 9 nodes succeeded.
+2019-09-30 10:19:17.305670: I tensorflow/compiler/tf2tensorrt/segment/segment.cc:460] There are 11 ops of 9 different types in the graph that are not converted to TensorRT: ArgMax, Softmax, Reshape, Placeholder, NoOp, Pack, TRTEngineOp, Shape, StridedSlice, (For more information see https://docs.nvidia.com/deeplearning/frameworks/tf-trt-user-guide/index.html#supported-ops).
+2019-09-30 10:19:17.305751: I tensorflow/compiler/tf2tensorrt/convert/convert_graph.cc:633] Number of TensorRT candidate segments: 0
+2019-09-30 10:19:17.323343: W tensorflow/core/grappler/optimizers/generic_layout_optimizer.cc:395] generic layout optimizer was called with cluster == nullptr
+2019-09-30 10:19:17.323659: W tensorflow/compiler/tf2tensorrt/convert/trt_optimization_pass.cc:183] TensorRTOptimizer is probably called on funcdef! This optimizer must *NOT* be called on function objects.
+2019-09-30 10:19:17.327882: W tensorflow/compiler/tf2tensorrt/convert/trt_optimization_pass.cc:183] TensorRTOptimizer is probably called on funcdef! This optimizer must *NOT* be called on function objects.
+2019-09-30 10:19:17.483950: W tensorflow/core/grappler/optimizers/generic_layout_optimizer.cc:395] generic layout optimizer was called with cluster == nullptr
+2019-09-30 10:19:17.486744: W tensorflow/compiler/tf2tensorrt/convert/trt_optimization_pass.cc:183] TensorRTOptimizer is probably called on funcdef! This optimizer must *NOT* be called on function objects.
+2019-09-30 10:19:17.576174: W tensorflow/compiler/tf2tensorrt/convert/trt_optimization_pass.cc:183] TensorRTOptimizer is probably called on funcdef! This optimizer must *NOT* be called on function objects.
+Placeholder
+ArgMax/dimension
+flatten/strided_slice/stack
+flatten/strided_slice/stack_1
+flatten/Reshape/shape/1
+TRTEngineOp_0
+flatten/Shape
+flatten/strided_slice
+flatten/Reshape/shape
+flatten/Reshape
+TRTEngineOp_1
+Softmax
+ArgMax
+After converting, nodes in total: 13
+Num of TRT nodes: 2
