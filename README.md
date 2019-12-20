@@ -4,7 +4,7 @@
 * [mnist_tftrt](./mnist_tftrt) is mnist with tensorRT
 * [ssd](./ssd) is with tensorRT
 
-![Tensorflow-TensorRT structure](./tf-trt-structure.jpg)
+![Tensorflow-TensorRT structure](./tf-trt-structure.png)
 
 Verified with:
 1. TensorFlow 2.0
