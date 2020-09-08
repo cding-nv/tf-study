@@ -1,3 +1,5 @@
+MobilenetV1/MobilenetV1/Conv2d_1_depthwise/depthwise + MobilenetV1/MobilenetV1/Conv2d_1_depthwise/Relu6 + MobilenetV1/MobilenetV1/Conv2d_1_pointwise/Conv2D + MobilenetV1/MobilenetV1/Conv2d_1_pointwise/Relu6
+
 1.
 Thread 任务基本单元
 Warp 调度单元，实现warp中的thread同步运行
