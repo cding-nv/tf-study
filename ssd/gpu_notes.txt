@@ -48,3 +48,93 @@ Tensor Core 指令的数据来源是寄存器 不是内存，和内存里数据�
 没有硬件指令最擅长最快的数据layout 格式的概念（TensorRT不感知）
 硬件指令和软件的数据格式没有必然绑定
 
+7.
+Memory bound refers to a situation in which the time to complete a given computational problem is decided primarily by the amount of memory required to hold data. This is in contrast to algorithms that are compute-bound, where the number of elementary computation steps is the deciding factor. Memory and computation boundaries can sometimes be traded against each other, e.g. by saving and reusing preliminary results or using lookup tables.
+
+CPU-bound(计算密集型) 和I/O bound(I/O密集型)
+1、分析算法流程，分析算法中的某些中间是否有能够合并的操作，比如对于图像先进行下采样，然后再上采样存储到原始中，类似这种的操作都可以合并操作，直接在进行下采样之后不需要另外存储图像，直接进行上采样，这样就可以合并操作，减少内存的来回读写操作。
+2、利用pthread的affinity功能，把算法的主要线程均匀affinity到主要的处理器核上；不使用CPU自主分配，自主控制线程的处理方式。
+3、一般情况下，memory的分配都是使用malloc，可以替换malloc，利用MMAP分配page连续的内存来减少page fault，从而提高memory的效率。
+
+8.
+双调排序
+初始值：(10 11 13 14 15 16 17 18, 19 15 13 12 12 11 9 8)
+
+(10 11 13 14 15 16 17 18) (19 15 13 12 12 11 9 8) 
+网络1排序： (10 11 13 12 12 11 9 8) (19 15 13 14 15 16 17 18)
+
+(10 11 13 12) (12 11 9 8) (19 15 13 14) (15 16 17 18) 
+网络2排序→ (10 11 9 8) (12 11 13 12) (15 15 13 14) (19 16 17 18)
+
+(10 11) (9 8) (12 11) (13 12) (15 15) (13 14) (19 16) (17 18) 
+网络3排序→ (9 8) (10 11) (12 11) (13 12) (13 14) (15 15) (17 16) (19 18)
+
+最终结果：(8 9 10 11 11 12 12 13 13 14 15 15 16 17 18 19)
+
+9. cudnn 格式  https://docs.nvidia.com/deeplearning/sdk/cudnn-developer-guide/index.html#overview   
+
+10. cuda samples
+  a.  asyncAPI
+           float gpu_time = 0.0f;
+          cudaEventRecord(start, 0);
+          kernel<<<>>>();
+          cudaEventRecord(stop, 0)
+          cudaEventElapsedTime(&gpu_time, start, stop);
+  
+  b. cdpSimplePrint.cu     CUDA Dynamic Parallelism 在kernel 里launch 新的kernel
+  nvcc -ccbin g++ -I../../common/inc  -m64 -dc -gencode arch=compute_70,code=sm_70  -o cdpSimplePrint.o -c cdpSimplePrint.cu
+ nvcc -ccbin g++   -m64    -gencode arch=compute_70,code=sm_70  -o cdpSimplePrint cdpSimplePrint.o  -lcudadevrt
+
+ c. 原子操作： atomicAdd（）    https://www.cnblogs.com/biglucky/p/4283476.html
+__device__ int g_uids = 0;  // varialbe on GPU
+__shared__ int s_uid;    // create id per block 
+
+d. cdpSimpleQuicksort
+         用 dynamic parallelism 实现 快速排序
+
+e. cppOverload.cu
+      (*func3)<<<1024/256, 256>>>()  可以overload， 结果正确
+
+f. cudaOpenMP.cu
+     openMP  f. cudaOpenMP.cu
+     openMP  可以 通过  omp_set_num_threads(num_gpus);   set 需要多少 cpu threads， 并启动 num_gpus 个 thread去执行 “”#pragma omp parallel“” 之间的程序
+
+g. cudaTensorCoreGemm.cu            wmma::fragment<>      wmma::load_matrix_sync()  wmma::store_matrix_sync()        ???
+ 1.  init_device_matrices<<<80, 512>>> ()
+      for (int i = blockDim.x * blockIdx.x + threadIdx.x; i < M_GLOBAL * K_GLOBAL; i += gridDim.x * blockDim.x) {
+              A[i] = __float2half(A_h[i]);  }
+       其中 blockDim.x = 512,    512 * (0~80) + (0~512)   每一个block 负责把 512 个搞定， 每一个循环搞定 80 * 512 个， 所以  是  i += gridDim.x * blockDim.x 即 80 * 512
+   2. #pragma unroll(4)     告诉编译器循环展开n次是安全的， 其实很多很多时候编译器会自动判断各种信息，但是这增加了冗余开销，反倒不如直接把我们优化工程师知道的东西告诉编译器
+       后跟参数1则编译器不会展开循环。如果没有参数，并且循环次数是一常数时编译器会将循环完全展开，如果不是常数就根本不会展开
+     https://blog.csdn.net/u013625961/article/details/62422097
+
+h. fp16ScalarProduct
+__global__ void s_test() {
+    half2 value = __float2half2_rn(0.f);
+    half2 a(1.2, 1.0);
+    half2 b(2.2, 2.0);
+    float f_result = 0;
+    value = __hfma2(a, b, value);
+    f_result = __low2float(value) + __high2float(value); // 1.2 x 2.2 + 1.0 x 2.0
+    printf("f_result = %f\n", f_result);   
+}   // https://docs.nvidia.com/cuda/cuda-math-api/group__CUDA__MATH____HALF2__ARITHMETIC.html#group__CUDA__MATH____HALF2__ARITHMETIC_1g43628ba21ded8b1e188a367348008da
+
+h.inlinePTX.cu
+PTX (parallel thread execution)   assembly language
+kernel 里可以插入汇编
+ asm("mov.u32 %0, %%laneid;" : "=r"(laneid)); 
+d_ptr[elemID] = laneid;                                         ==>          h_ptr[elemID] = elemID % 32;   elemID是数组下标
+
+inlinePTX_nvrtc
+kernel_file = sdkFindFilePath("inlinePTX_kernel.cu", argv[0]);   
+    compileFileToPTX(kernel_file, argc, argv, &ptx, &ptxSize, 0);  
+    CUmodule module = loadPTX(ptx, argc, argv);
+    CUfunction kernel_addr;
+    checkCudaErrors(cuModuleGetFunction(&kernel_addr, module, "sequence_gpu"));
+cuLaunchKernel(kernel_addr, grid.x, grid.y, grid.z, block.x, block.y, block.z, shareMem, arguments[], extra)
+类似于dlopen， 找到实现的函数并调用
+
+i. 矩阵乘
+ https://www.cnblogs.com/biglucky/p/4244187.html      
+https://blog.csdn.net/Sumujingling/article/details/51496236
+v100  L2 cache  64M
