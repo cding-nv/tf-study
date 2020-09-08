@@ -1,0 +1,50 @@
+1.
+Thread 任务基本单元
+Warp 调度单元，实现warp中的thread同步运行
+Block 资源单位，保障warp间切换和同步 
+	share memory ,synchronize
+Grid (kernel) 
+Nvidia driver / cuda context(push/pop) 多stream
+https://s0docs0nvidia0com.icopy.site/cuda/cuda-c-best-practices-guide/index.html#multiple-contexts
+
+2.
+Tesla V100-SXM2-32GB
+(80) Multiprocessors, ( 64) CUDA Cores/MP:     
+                 5120 CUDA Cores（Streaming Processor）
+global memory:   32480 MBytes (34058272768 bytes)     gpu memory是32G
+L2 Cache Size:   6291456 bytes  = 6 x 1024 x 1024  =  6M
+constant memory:               65536 bytes  = 64K
+
+Shared memory per block:       49152 bytes = 48K
+Registers available per block: 65536 = 64K
+
+3.
+shfl_sync(m, r, t) enables an issuing thread to share a value stored in register r while reading the value shared by thread t in the same warp 
+https://developer.nvidia.com/blog/register-cache-warp-cuda/
+
+4.
+Warp内的各个线程交换数据可以用warp shuffle，是直接基于寄存器的数据交换，并不需要额外的存储空间。模式可以一个lane广播到所有的lane，也可以有比较复杂的交换pattern。
+
+好处： 
+1. access latency is lower compared to shared memory.
+2. The use of shfl_sync() eliminates the need for expensive thread block-wise synchronization via  __syncthreads() or a memory fence between writing and reading threads  
+3. In modern GPUs the shared memory size is only 64KB, while the register file size is 256KB. Consequently, if there are unused registers they can be used to augment shared memory
+
+不好：use of shuffle is fairly complex
+
+Cube <--> vector ?
+
+5.
+https://ecatue.gitlab.io/gpu2018/pages/Cookbook/matrix_multiplication_cuda.html
+Tiling
+Coalescing
+Bank Conflict
+
+https://on-demand.gputechconf.com/gtc-cn/2018/pdf/CH8303.pdf
+
+6.
+https://www.anandtech.com/show/12673/titan-v-deep-learning-deep-dive/3
+Tensor Core 指令的数据来源是寄存器 不是内存，和内存里数据格式关系不大
+没有硬件指令最擅长最快的数据layout 格式的概念（TensorRT不感知）
+硬件指令和软件的数据格式没有必然绑定
+
