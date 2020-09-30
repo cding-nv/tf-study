@@ -1,0 +1,385 @@
+-3.  GE问题FAQ http://3ms.huawei.com/hi/group/3554771/thread_8145388.html?mapId=9952694&for_statistic_from=all_group_forum
+
+-2. GE wiki  http://3ms.huawei.com/hi/group/3554771/wikis.html?category=1653888#category=1653888
+
+-1. 常量折叠pass 入口   
+     framework/domi/graph/passes/  base_pass.cc   -> RunPasses() 
+constant_folding_pass.cc   ->  ConstantFoldingPass::Run()
+    op_kernel = folding_pass::GetKernelByType(node);  通过node获取到 实现的 op_kernel 比如 ops/built-in/host_cpu/minimum.cpp
+     op_kernel->Compute()  运行 op_kernel 的实现方法 Compute
+    FoldingPass::Folding()  改图 
+wangqiang:  http://gerrit.turing-ci.hisilicon.com:8080/#/c/256279/
+huangqiang: http://gerrit.turing-ci.hisilicon.com:8080/#/c/248710/
+
+0. 网络中算子问题定位： http://3ms.huawei.com/hi/group/3554771/thread_8203572.html?mapId=10013492
+1. ATC 的 lib   Ascend Tensor convetor    输入模型和pbtxt或者caffe， 图优化， TBE， AICPU, CCE, RTS等算子编译生成kernel *.o ， 形成task, 再序列化proto格式 保存成文件
+2. ATC 使用说明  http://3ms.huawei.com/hi/group/3554771/thread_7654315.html?mapId=9433707
+3. 整个模型下发至TS执行    TS 是  Task schedule
+   Task schedule  会借助hardware TS 的能力     
+   1951上貌似没有软件 TS 模块  直接 用  hardware TS
+
+4. GE 优化pass  列表：  http://3ms.huawei.com/hi/group/3554771/wiki_5763126.html  
+common_subexpression_elimination_pass.cc  公共子表达式删除
+  http://3ms.huawei.com/hi/group/3554771/wiki_5920680.html?for_statistic_from=all_group_wiki
+graph/passes   一大坨    常量折叠
+   转换算子融合 ： http://3ms.huawei.com/hi/group/3554771/wiki_5757482.html?for_statistic_from=all_group_wiki
+
+
+5.   ACL 部分   傅俊 
+
+
+
+关于 parser
+a. 几个framework 都有自己的parser，  每一个parser 调用统一的 pre_checker
+b. pre-checker 会check： 1. 算子是否支持  2. 名字重复
+    tensorflow_parser.cc ->  line1184:  PreChecker::Instance().Clear();  这后面一段会遍历所有node， 找出不认识的， 名字重复的node
+c. 后面会有   tensorflow_parser.cc ->  line441:    CheckoutInputNum()  check 用户实现的 plugin 参数是否和要求一致， 可能因为tf 版本问题导致不一致
+d. “连边 ”  anchor
+e. tensorflow_parser.cc ->  line759    ge::OperatorFactory::CreateOperator(node_name, op_type)  根据 op_type 找 op
+f. ErrorManager 会写 json 文件
+g. 有些TBE没有的算子 比如产生随机数， 会有 frameworkOP 跑在AICPU上，这个op 如果有错误在parser里可能check不出来
+ 
+h.  scope 融合 小算子融合成大算子 
+     tensorflow_parser.cc  
+          line 1972  ScopeFusionPassRegistry::GetInstance().GetAllRegisteredPasses();  获取所有已注册的pass
+          line1968:    shared_ptr<domi::ScopeGraph> scope_graph = passmanager.BuildScopeGraph(graph_def);
+     geraph_def 是原图， 创建一个 scope_graph
+      RunScopeFusionPass（）  run 很多pass 即匹配规则
+      --> ops/built-in/framework/tf_scope_fusion_passes     register_scope_fusion_passes.cc
+                    scope_basic_lstm_cell_pass.cc  line167:  匹配上之后
+               
+i. 算子插件注册
+
+init     /usr/local/Ascend   ？
+domi  ？  达芬奇 offline 。。。。
+  
+graph_preprocess.cc:2331  
+GraphPrepare::InferShapeForPreprocess() 
+ -> base_pass.cc  GEPass::Run()
+  ShapeRefiner::InferShapeAndType()
+      -> node_utils.cc:321
+
+0. FE是只针对 AICore的  ？  是
+为什么会有二次拆分？
+GE先做第一次子图拆分，FE在子图中插入转换算子，然后GE会做图合并，消除各个子图边界处的冗余转换，然后再二次拆分，进行子图编译
+
+1. ATC command
+
+atc --framework=3 --model=./XXX.pb --output=./XXX --soc_version=Ascend310
+atc --framework=0 --model=./data_conv.prototxt --weight=data_conv.caffemodel --output=./666  --out_nodes=conv1:0 --soc_version=Ascend310
+
+
+2. 
+git push davinci HEAD:refs/for/br_hisi_trunk_ai
+repo upload .
+
+commit format: 
+commit c3ad425986e2487141edb72421207c6b503bd76b
+Author: d00568317 <d00568317@huawei.com>
+Date:   Wed Jun 17 16:52:08 2020 +0800
+
+    DTS:DTS2020060311241
+    Description:handle should be dlclose
+
+    Team:HISI_SW
+    Feature or Bugfix:Bugfix
+
+    Change-Id: I717406616a4b86753b1ce22d114eac9e064a3faa
+    Signed-off-by: d00568317 <d00568317@huawei.com>
+
+Problems: 
+gdb 不能用  安装不上
+   # debuginfo-install glibc
+Loaded plugins: fastestmirror
+enabling epel-debuginfo
+Loading mirror speeds from cached hostfile
+http://debuginfo.centos.org/7/x86_64/repodata/repomd.xml: [Errno 14] curl#7 - "Failed to connect to 2001:4de0:aaae::197: Network is unreachable"
+Trying other mirror
+
+本地不能编译， 提交CL 编译效率很低
+
+log:   /var/log/npu/conf/slog/slog.conf
+
+omg.cc -> ParseGraph() 是 caffe/tf model 通过结构定义 ge_ir.proto 到 ge::graph->ComputeGraph 的过程
+ge::Graph 里面有 GraphImplPtr impl_;  即 GraphImpl GraphImpl-> ComputeGraph 所有的计算 优化都是操作这个图
+图准备包括  inferShape， inferFormat， 和FE无关的优化
+原图优化
+子图优化
+
+omg.cc   ParseGraph() ->
+  caffe_parser.cc -> CaffeModelParser::Parse(）
+      pre_checker.cc -> CheckTypeSupported()
+         -> domi::OpRegistry::Instance()->GetOmTypeByOriOpType(type, op_type)    判断是否支持算子
+                 -> op_registry.h  regsiter.cpp
+
+
+
+/usr/local/Ascend/ops/framework/built-in/caffe/libops_all_caffe_plugin.so
+  ops/built-in/framework/caffe_plugin   这是caffe插件的位置
+ops/built-in/op_proto   这是算子原型的位置   mk文件在ops下面
+ge_generator.cc  -> GeGenerator::GenerateOfflineModel()
+                                 GeGenerator::Impl::BuildModel()
+                                      graph_manager_.AddGraph()
+                                      graph_manager_.SetOptionsRunGraphFlag()
+                                      graph_manager_.BuildGraph()
+                                           GraphManager::StartForRunGraph()
+                                                  GraphManager::PreRun()
+                                                          graph_optimize.cc -> GraphOptimize::OptimizeOriginalGraphForQuantize()   量化相关的
+                                                                 iter->second->OptimizeGraphPrepare(*compute_graph); -> 
+                                                                    fe_graph_optimizer.cpp  ->  FEGraphOptimizer::OptimizeGraphPrepare()
+                                                                               graph_fusion.cpp -> GraphFusion::TagNoConstFolding()
+                                                          summary_optimize.cc -> GraphOptimize::HandleSummaryOp()
+                                                          graph_preprocess.cc  -> GraphPrepare::PrepareDynShape()
+                                                                        ? compute_graph.cc:47   compute_graph.cc:683
+                                                                       GraphPrepare::PrepareDynShape()      图准备包括  inferShape， inferFormat， 和FE无关的优化
+                                                                              graph_preprocess.cc  GraphPrepare::PrepareOptimize()                                                                            
+                                                                                        
+                                                                                          PrunePass()
+                                                                                          HcclMemcpyPass()
+                                                         graph_optimize.cc -> GraphOptimize::OptimizeOriginalGraph()   原图优化
+                                                                   每一个 graph_optimizer 都过一下  对 compute_graph 做修改
+                                                                           pattern_fusion_base_pass.cpp
+                                                                   fe_graph_optimizer.cpp
+                                                                   graph_fusion.cpp一大坨 DFSTopologicalSorting() FE会改图，改完后需要重新topo排序 有些处理是按照topo排序的顺序对算子进行处理的
+                                                                     FEGraphOptimizer::OptimizeOriginalGraph()   比如 conv2D+bn -> conv2D
+                                                                     graph_manager.cc:381]25603 PreRun:Run OptimizeOriginalGraph on graph 888.om(0) success                  
+                                                          graph_preprocess.cc ->  GraphPrepare::PrepareRunningFormatRefiner（）
+                                                                   pass_manager.cc:69
+                                                                   graph_preprocess.cc
+                                                         graph_optimize.cc -> GraphOptimize::OptimizeOriginalGraphJudgeInsert（）
+                                                                        OptimizeOriginalGraphJudgeInsert(*compute_graph)  
+                                                                         judge 比如AICore和AICPU都支持b算子， 或者都支持FP32但只有其中一个支持int64， 又或者 cost 不一样， 则需要judge
+                                                                                
+                                                         RecordAIPPInfo()    -> util_insert_aipp_op.cc
+                                                            GraphManager::OptimizeStage1（）
+                                                                   graph/passes/constant_fuse_same_pass.cc:69  
+                                                                                          common_subexpression_elimination_pass.cc  公共子表达式删除
+                                                                                                   http://3ms.huawei.com/hi/group/3554771/wiki_5920680.html?for_statistic_from=all_group_wiki
+                                                                   graph/passes   一大坨    常量折叠
+                                                                        转换算子融合 ： http://3ms.huawei.com/hi/group/3554771/wiki_5757482.html?for_statistic_from=all_group_wiki
+                                                                                     cast 做 fp32 fp16 转换， transdata做nchw 转换
+                                                         compute_graph->InferShapeInNeed（） ？
+                                                         GraphManager::OptimizeSubgraph（）  
+                                                                    先拆 再子图优化  再merge成整图
+                                                                        graph/partition/engine_place.cc： AssignEngineAndLog（）： Assigning DNNEngine AIcoreEngine to node 
+                                                                        graph/partition/graph_partition.cc:537]Initialize:Node name is fp32_vars/add_1, engine is AIcoreEngine, cluster index is 126, stream label is
+                                                                    GraphManager::SetSubgraph（）里面有多线程做子图优化 OptimizeSubGraph
+                                                                    graph/partition   一大坨       fusion_engine/graph_optimizer/ub_fusion
+                                                                                           [fusion_engine/graph_optimizer/fe_graph_optimizer.cpp:764]25625 OptimizeFusedGraph:"Optimize fused graph success."
+                                                                                          graph_manager.cc:2043]25625 ProcessSubGraphWithMultiThreads:SubGraph optimize success AIcoreEngine
+                                                                        子图优化完了就merge  graph_partition.cc:217]25603 MergeSubGraph:Graph merge starts
+                                                                         并且打印新的engine place graph/partition/engine_place.cc:79]25603 AssignEngineAndLog:Assigning DNNEngine AIcoreEngine to node trans_Cast_170, op type Cast
+--整图做了很多 pass 转换算子 融合 等等 ， 为什么要拆子图 还有子图优化 ？  fusion_engine/graph_optimizer   ub_fusion 等
+--前者是硬件无关融合，后者是硬件相关融合
+
+                                                         GraphManager::OptimizeStage2（）
+                                                                    graph/passes/cond_remove_pass.cc
+                                                                    fusion_engine/ops_kernel_store/fe_ops_kernel_info_store.cpp
+                                                                     tensor_engine/te_fusion/fusion_api.cc    一大坨
+                                                                     这个阶段也会打engine place： [framework/domi/graph/partition/engine_place.cc:79]25603 AssignEngineAndLog:Assigning DNNEngine DNN_VM_GE_LOCAL to node dynamic_const_257, op type Const
+                                                          GraphManager::Build（）
+                                                                     graph_builder.cc:144
+                                                                      graph/partition/graph_partition.cc
+                                                                      runtime/feature/src/runtime.cc
+                                                 GraphManager::LoadGraph（）
+                                                 GraphManager::BuildGraph（）
+                            ret = impl_->SaveModel(file_name_prefix, ge_model, model);
+                                     GeGenerator::Impl::SaveModel（）
+                                                                    
+
+ATC
+    main.cc  
+        1. graph = load_model.GetGraph();  是 MINDSPORE 直接得到的 原始的graph 可以直接给 mindspore 用
+        2. 如果不是， 就 ParseGraph（） -> omg.cc  ParseGraph()  分别 model_parser（）和 weights_parser（）
+        3. ge_generate直接调用graphManage对象接口， 无session管理， 不支持 variable 节点
+        4. parser -> ge_generate -> 图准备 优化 拆分 编译
+        5. 推理下，算子的输入输出shape未标识，需要GE通过infershape进行推导
+        6. GE支持用户设置输入输出的dataType，以便修改全网的运行dataType，GE在infershape之后修改data的dataType，并插入转换算子
+         7. 插入aipp规则的配置文件， ge会插入aipp算子，修改data的输出dataType    
+             aipp 的输入一般为yuv格式， unsigned char， 输出为fp16， 5HD格式
+         8.  与训练差异点 融合优化    
+                 parser： Scope 融合
+                 FE融合优化： Graph 融合 ？
+                                 fusion_engine\graph_optimizer\graph_fusion\fusion_pass_manager\builtin_pass
+                               ops\built-in\fusion_rules\ai_core\built_in_graph_rules.json
+                              融合是FE的机制，分很多种类型我发的这个json是其中一种类型  D:\doc\ge\json_graph.rar
+                 FE： UB 融合   L2融合 
+                 面向推理由于没有反向， 融合可以更多
+       9. 执行    
+             离线模型    framework/domi/graph/load/new_model_manager/model_manager.cc
+                          ModelManager::LoadModelOffline   创建stream/event， 申请内存
+                          ModelManager::Start   启动处理线程
+                          ModelManager::DataInput  将输入输出数据加入数据队列
+                          davinci_model.cc    从数据队列取出数据、转换数据并拷至device（model->CopyInputData）、下发推理任务（rtModelExecute）、同步（rtStreamSynchronize）、数据拷贝至host并返回（model->ReturnResult）
+
+Parser
+   1. REGISTER_MODEL_PARSER_CREATOR(ONNX, OnnxModelParser);
+       REGISTER_WEIGHTS_PARSER_CREATOR(ONNX, OnnxWeightsParser);  register 到 哪里   ATC 也会调用 model/weights parser ？
+   2. parser_api.cc ParserInitialize（）    
+                 // load custom op plugin
+                 TBEPluginManager::Instance().LoadPluginSo();
+   3.   op_map.cc   ->  上层框架的类型到 GE IR 的类型的映射
+   4.  直接对应到算子 ？  yes ！
+   5.  AddFMKNode  AddEdge  两部分
+6. parser里有检查算子的有效性
+
+7. parser里 把 TBE算子const输入优化成attr 是起什么作用 ？
+    王正俊(00377704) 2020-06-17 15:06
+    这个现在不在parser里面做了，挪到FE做了。
+    作用是TBE的算子定义和TF里面不一样， 对于一些运行前就知道的参数（常量）， TBE是直接从属性获取， 而不是定义一个输入
+    检查算子 应该还是需要的吧， 有些算子我们也可能不支持
+    目前不支持 怎么处理呢 ?     -->      走 AICPU的 tf kernel
+
+8    训练 有  scope 融合  小算子融合成大算子
+    ScopePassManager   -> 最终得到 ScopeGraph 供后续使用
+
+图拆分
+图拆分   什么是子图？怎么得到的？
+图拆分里有算子支持不支持的check 流程
+循环依赖问题 ?
+Parse:Caffe Parse model file ./data_conv.prototxt
+AddNode   type:Data
+AddNode   type: Conv2D
+AddGraph
+BuildGraph
+PreRun
+OptimizeOriginalGraphL2FusionOn
+OptimizeOriginalGraphJudgeInsert
+OptimizeGraphBeforeSubGraphL2FusionOn
+RunPasses
+
+pass_manager.cc   PassManager
+
+TFAdapter:
+     
+FE fusion
+matmul_biasadd_cce_fusion_pass.cpp 这个是 矩阵乘 和 累加的 融合吗 ? 这里只是软件逻辑上的融合 还没有和 device产生任何关系吧 ? 
+郑金鑫  周马莉：   fe的融合pass都是逻辑上的计算 不涉及device
+
+
+2.
+开源code：
+https://gitee.com/mindspore
+
+3.
+已通过群组：  
+     HIS-TuscanyC7x-SEG-ALL
+  HIS-Tuscany-1980-SEG-MindSpore
+HIS-Tuscany-1980-SEG-Framework
+HIS-DSolution-SEG
+HIS-DAVINCI-SEG-GIT-REVIEW
+HIS-Tuscany-SEG-1980-Hisi
+HIS-TuscanyC7x-SEG-ALL 
+HIS-Tuscany-SEG-1980-Hisi 
+HIS-DAVINCI-FRAMEWORK-GIT
+HIS-Tuscany-SW-Framework-Hisi
+
+HIS-DAVINCE-FE-GIT
+HIS-DAVINCE-OPS-GIT
+
+
+HIS-DAVINCI-ACL-GIT   huanghaiyan 
+HIS-DAVINCI-FRAMEWORK-GIT   huanghaiyan 
+HIS-Tuscany-SW-Framework-Hisi    huanghaiyan
+
+4.
+from liubo
+-g open,cce,nnvm,rts,llt_nnvm,llt_rts,simulator,mmpa,model,common_graph,common_ops,adk,adk_ccec_libs --repo-branch=stable --no-repo-verify
+
+repo init -u ssh://10.141.107.107/platform/manifest.git -b br_hisi_trunk_ai -m default.xml -g open,cce,fmk,rts,drv,mmpa,cce_aicpu,adk,adk_ccec_libs,simulator,datapreprocess,computeprocess,graph,common_graph,common_op,nnvm,fe,ops,tee,engine,acl --repo-branch=stable --no-repo-verify
+
+0618_code
+repo init -u ssh://10.141.107.107/platform/manifest.git -b br_hisi_trunk_ai -m default.xml -g open,fmk,datapreprocess,computeprocess,graph,common_graph,common_op,fe,ops --repo-branch=stable --no-repo-verify
+
+0814_code
+repo init -u ssh://10.141.107.107/platform/manifest.git -b br_hisi_trunk_ai -m default.xml -g open,fmk,nnvm,graph,common_graph,common_op,fe,ops --repo-branch=stable --no-repo-verify
+
+repo gerrit ： 好文档： http://wiki.turing-ci.hisilicon.com/chapter02/prepare_environment.html
+
+5.
+
+
+MindStudio   开发算子  用.py 开发，  生成 .c  再编译 在 融入到 FE 里 有taskInfo   放在第八个包  有算子 op desc， GE就可以使用这个算子
+Ascend平台提供给开发者的集成开发环境，开发者可以通过MindStudio进行离线模型转换、离线推理算法应用给开发调试、算法调试、自定义算子开发和调试、日志查看、性能调优、系统故障查看等。
+
+TF Adapter/ME将前端训练模型转换为D IR格式的模型；调用GE接口启动模型编译和执行
+
+
+GE优化IR模型，完成Shape推导、常量折叠、算子融合等优化动作
+
+GE调用FE接口完成AICORE计算算子编译
+
+
+
+以下过程，在集群环境中，所有节点同样处理：
+
+1.       训练框架前端（TF/ME）根据用户提供的训练脚本，生成训练模型 ，读取指定路径下的checkpoint文件完成模型权重初始化或随机初始化；
+
+2.       训练框架前端（TF/ME）调用GE初始化接口，完成设备打开、计算引擎初始化、算子信息库初始化；在TF前端时，通过TF Adapter调用该接口，ME框架中，直接调用GE接口；
+
+3.       TF Adapter/ME调用GE接口完成模型编译/执行上下文session；
+
+4.       TF Adapter/ME将前端训练模型转换为D IR格式的模型；调用GE接口启动模型编译和执行；
+
+5.       GE优化IR模型，完成Shape推导、常量折叠、算子融合等优化动作
+
+6.       GE调用FE接口完成AICORE计算算子编译；
+
+7.       GE调用AICPU接口完成AICPU计算算子编译；
+
+8.       GE调用集合通信接口完成集合通信算子编译;
+
+9.       GE调用Runtime接口分配运行资源，包含内存、Stream、Event等;
+
+10.   GE调用Runtime接口加载模型;
+
+11.   GE调用TS接口完成模型加载;
+
+
+
+
+FE提供图的优化分析、管理算子融合规则、算子融合功能、算子信息库管理、使能自定义算子等功能，提供如下功能：
+
+l   以IR Graph作为输入，完成图优化,包括整图优化，子图优化，stream优化等；
+
+l   管理算子的融合规则；
+
+l   依据融合规则，对IR Graph进行匹配，进行算子融合操作；
+
+l   对AI子系统所支持的CCE/TBE等算子进行管理，维护算子列表；
+
+l   Gentask阶段生成taskinfo。
+
+
+
+TBE（Tensor Boost Engine）提供了基于TVM框架的自定义算子开发能力    ？？？
+
+HCCL    ->  MPI + NCCL
+
+网络分析组    创新类 论文  李霄鹏
+scope 融合 ？    纯定制    fasterRCNN  maskRCNN ssd lstm
+循环网络结构  while loop
+性能分析
+内存分析  最大内存占用
+在线推理  离线推理  在线训练  离线训练
+
+CANN     compute architeture for neural networks
+CCE   cube-based computing engine
+AIPP  AI preprocessing
+TBE   Tensor Boost Engine
+
+ACL：  Ascend computing language
+
+                      FE  Fusion Engine  ：  TaskInfo  算子融合 算子管
+TBE 算子开发工具 ：   DSL, TIK                 CCE 算子库：卷积类，矩阵乘，控制流类，Vector类
+                                 CCE compiler
+                             compiler Front End
+                         AI Core     AI CPU   CPU
+
+Graph融合， Buffer 融合（硬件级融合）， Task 融合（编译器级融合）， L2优化
+
+GE 对TF 训练的优化过程中 XLA有没有起作用 ？
+    没有，TF+GE模式，是不可开启XLA的
+    XLA的融合规则是针对具体backend的，XLA目前并不支持NPU
+这个backend 指的 GPU TPU ？
+    是
