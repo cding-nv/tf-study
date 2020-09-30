@@ -1,0 +1,18 @@
+1. https://hal.inria.fr/inria-00112631/document
+将卷积运算转化为矩阵乘法，从乘法和加法的运算次数上看，两者没什么差别，但是转化成矩阵后，运算时需要的数据被存在连续的内存上，这样访问速度大大提升（cache），同时，矩阵乘法有很多库提供了高效的实现方法，像BLAS、MKL等，转化成矩阵运算后可以通过这些库进行加速。
+
+缺点呢？这是一种空间换时间的方法，消耗了更多的内存——转化的过程中数据被冗余存储
+
+NCHW
+KRS 
+     number of output feature maps
+     height of filter kernel
+     width of filter kernel
+u v pad_h pad_w
+     vertical stride
+    Horizonal stride
+
+filter matrix demention:  K x CRS = 2 x 3*2*2  = 2 x 12
+input data matrix demension:  CRS x NPQ = 3*2*2 x 1*P*Q
+P = （H - R + 1 + 2pad_h）/ u
+Q = (W - S + 1 + 2pad_w) / v
