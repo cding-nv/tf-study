@@ -4,4 +4,10 @@ AllGather
 broadcast
 
 HCCL  华为集合通信库， 用于训练时参数通信
-rankTable File  用于描述HCCL信息的文件  
+rankTable File  用于描述HCCL信息的文件 
+
+NCCL
+Reduce：从多个sender那里接收数据，最终combine到一个节点上。
+All-reduce：从多个sender那里接收数据，最终combine到每一个节点上。
+https://zhuanlan.zhihu.com/p/56991108
+
