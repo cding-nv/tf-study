@@ -1,0 +1,57 @@
+https://github.com/tensorflow/tensorflow/tree/r2.0
+
+Owner:  宦睿智, 薛鹏
+
+
+
+4.
+Tensorflow执行计算图时，executor_state逐一调用算子的Kernel核函数，在Kernel核函数执行时，input已可获取，用于计算outputshape并申请output内存
+
+Pytorch属于完全动态图执行，单个算子执行前后分配内存大小。
+
+Pytorch数据依赖型算子，在计算output size之前通过SyncStream方式完成异步下发任务的数据同步。
+
+
+
+OMPartitionSubgraphsPass
+
+MarkForPartition()
+
+   -> FindNpuSupportCandidates()  check 白名单
+
+        -> IsWhiteListSupport()
+
+
+
+3.
+
+l全下沉模式，追求极致性能，但是依赖于GE引擎（及算子信息库）对当前执行图上算子的全量支持，全下沉模式下，完整的训练Step都在Device上执行，与之并行的数据预处理模块，会源源不断的将网络需要的输入数据送至Device，从而训练的过程可以全下沉在Device上执行，只在必要的时候（如保存Summary），才与Host交互一次。因而全下沉模式下，可以设置小循环iteration_per_loop，Host上的一次Session Run，会实际完成小循环次数个Step。当开启了全下沉，执行图上又有Device不支持的算子时，系统无法执行。全下沉模式下一副TF执行图对应一副GEGraph。
+
+混合计算模式，在保证图被正确执行的前提下尽可能地将图下沉执行，不依赖GE引擎（及算子信息库）对图上全量算子的支持，混合计算模式下，被TF_Adapter判定为不支持的算子，会被留在Host上的Tensorflow运行时中执行，在一个训练Step中，Host与Device可能产生多次交互，因此，在混合计算模式下，小循环iteration_per_loop大小必须为1。特别地，混合计算模式下，除Device未声明支持的算子外，声明支持但是可能无法执行的算子也会判定为不支持（灰名单算子）。混合计算模式下，一幅TF执行图可能对应多个GEGraph
+
+l全下沉模式下，每幅Tensorflow执行图只会生成一个GEOP，混合计算模式下会生成多个GEOP。
+
+2.
+geop_npu.cc  GE初始化
+    GeOp::GlobalInitialize(OpKernelConstruction *ctx)
+         ge::GEInitialize(init_options)
+
+ge_api.cc -> SessionManager -> InnerSession -> graph_manager.cc
+
+geop_npu.cc -> GeOp::ComputeAsync() 
+  ge_session_->RunGraphAsync()
+    GraphManager::PreRunThread()  循环获取args， 执行session内容。  Pop里有条件变量
+            
+
+1.
+>> 特别地，由于D系统当前的约束（资源和String类型无法作为Device的输入/输出）,当资源类/String成为子图边界时，需要特殊处理。比如，当Variable的引用边输出成为子图边界时，需要进行变量复制。再比如当String类型成为子图边界时，会向子图内部蔓延，从子图中剔除所有String类型输出的边界算子等
+在全下沉模式 不存在这种情况 对么 ?
+要是白名单全放开就不存在  否则是存在的
+正常情况下 全下沉会把整图都下沉，也就没有所谓的子图边界了  不过要是有算子不在白名单里  还是会切图的
+那这和 混合模式 还有区别吗 ?  也就是说 全下沉模式 也可能生成多个子图 多个 GEOP ?
+没啥区别  当时的混合模式  就是为了处理有的算子 Device支持的不够全的情况的  动态shape类的
+全下沉模式 当前是只下沉那个最大的
+但是全下沉是依赖于  整图中的算子都可以下沉执行的
+这两种不是可选的两种模式  是全下沉要么能执行  要么不能执行
+也就是说 先检查 是否能 全下沉 不能就 混合 ?
+差不多 现在网络来了 会先分析网络结构，看有没有算子不支持
