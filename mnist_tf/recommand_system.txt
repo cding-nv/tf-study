@@ -26,3 +26,9 @@ embedding 切分部署device 性能状态
 6.
 稀疏矩阵压缩方式 对称矩阵     上（下）三角矩阵，   稀疏矩阵
 http://data.biancheng.net/view/183.html
+
+7. NVTabular cuDF
+https://github.com/nvidia/NVTabular
+
+NVTabular is a feature engineering and preprocessing library for tabular data designed to quickly and easily manipulate terabyte scale datasets used to train deep learning based recommender systems. It provides a high level abstraction to simplify code and accelerates computation on the GPU using the RAPIDS cuDF library
+cuDF（https://github.com/rapidsai/cudf）是一个基于Python的GPU DataFrame库，用于处理数据，包括加载、连接、聚合和过滤数据。向GPU的转移允许大规模的加速，因为GPU比CPU拥有更多的内核。
