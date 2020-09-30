@@ -1,0 +1,94 @@
+https://github.com/huggingface/transformers
+
+NLP  natural language processing
+pre-training-then-fine-tuning  NLP 研究新范式
+DFM 推荐系统
+Bert  只是 transformer 的 encoder 部分
+多语言  多任务  
+mask 一个词
+生僻的词切开
+universal transformers  不一定都要12层 有的 4层就够了
+transformer-xl  segment-level recurrence + Relative position encoding
+XLNet
+sparse transformer
+RoBERTa  效果最好 
+ALBERT
+generator  discriminator
+Electra  训练上更高效
+ERNIE-Baidu
+ERNIE-TSingHua
+Multilingual BERT
+哪吒预训练模型
+      相对位置编码   全词掩码   混合精度 LAMB优化器 支持GPT自回归模型   概率掩码
+
+模型训练
+蒸馏的方法  先做大再做小   
+     数据增强   TinyBERT
+模型压缩  tiny-bert的模型  大模型教小模型
+量化    TernaryBERT
+ 剪枝
+
+MobileBert google的  深度更重要   蒸馏瘦高模型
+可伸缩BERT   DynaBert
+Attention maps
+
+老师模型和学生模型容量差距越来越大   蒸馏
+参数
+深度
+任务
+
+
+Transformer  
+encoder -> decoder
+Encoder   :   Self-attention -> FFN(z)  Feed Forward Neural Network
+Decoder:     Self-attention (当前翻译和已经翻译的前文之间的关系) -> Encoder-Decoder Attention (当前翻译和编码的特征向量的关系) -> FFN
+
+1. 首先通过 Word2Vec 等词嵌入方法将输入语转化为特征向量， 嵌入维度为 512
+
+2. Self-Attention是Transformer最核心的内容, 其核心内容是为输入向量的每个单词学习一个权重
+在self-attention中，每个单词有3个不同的向量，它们分别是Query向量（ [公式] ），Key向量（ [公式] ）和Value向量（ [公式] ），长度均是64。它们是通过3个不同的权值矩阵由嵌入向量 [公式] 乘以三个不同的权值矩阵 [公式] ， [公式] ， [公式] 得到，其中三个矩阵的尺寸也是相同的。均是 [公式]
+
+Query  :  1 x 512    X   512 x 64  =  1 x 64
+Key  :      1 x 512    X   512 x 64  =  1 x 64
+Value  :   1 x 512    X   512 x 64  =  1 x 64
+
+3.
+score = Q * K    ->  归一化   除以 [公式]， 并施以softmax 激活函数， 点乘Value，得到每个输入向量的评分v
+K 是不同词的K值 ，  所以才求 softmax ？
+[公式]
+4. 相加之后得到最终的输出结果  [公式]
+[公式]
+5.  采用残差网络中的 short-cut， 解决深度学习中的退化问题
+
+6.  在解码器中， 比编码器多了 encoder-decoder attention
+7. 解码器解码之后，解码的特征向量经过一层激活函数为softmax的全连接层之后得到反映每个单词概率的输出向量。此时我们便可以通过CTC等损失函数训练模型了
+
+8. 引入位置编码（Position Embedding）的特征
+
+9.
+
+Decoder多了一个Encoder-Decoder Attention，两个Attention分别用于计算输入和输出的权值：
+
+    a. Self-Attention：当前翻译和已经翻译的前文之间的关系；
+
+    b.Encoder-Decnoder Attention：当前翻译和编码的特征向量之间的关系
+
+       在解码器中，Transformer block比编码器中多了个encoder-cecoder attention。在encoder-decoder attention中， [公式] 来之与解码器的上一个输出， [公式] 和 [公式] 则来自于与编码器的输出。其计算方式完全和图10的过程相同
+
+
+Transformer也只是一个全连接（或者是一维卷积）加Attention的结合体， 但是其设计已经足够有创新，因为其抛弃了在NLP中最根本的RNN或者CNN并且取得了非常不错的效果，算法的设计非常精彩
+Transformer的设计最大的带来性能提升的关键是将任意两个单词的距离是1，这对解决NLP中棘手的长期依赖问题是非常有效的。
+Transformer不仅仅可以应用在NLP的机器翻译领域，甚至可以不局限于NLP领域，是非常有科研潜力的一个方向
+算法的并行性非常好，符合目前的硬件（主要指GPU）环境
+Transformer失去的位置信息其实在NLP中非常重要，而论文中在特征向量中加入Position Embedding也只是一个权宜之计，并没有改变Transformer结构上的固有缺陷
+
+Chris:   Transformer 里的decoder起什么作用？ 为什么不一直堆encoder， 最后再softmax， 再 ctc ？就是为了获取 decoder 上一个输出作为输入？
+Tyler:   bert 里就没有decoder啊   一般说需要decoder 是因为在翻译任务里面 早期的一些翻译算法
+           encoder 会把整个句子变成一个特征向量   然后就需要一个和encoder对称的decoder把特征向量变回序列
+           Bert 就是直接堆 encoder 就完事了
+           但不用像原本 transformer 一样需要一个 和 encoder 几乎对称的 decoder
+Hehan：  我理解 decoder 主要是用来做预测的， 引入 mask multihead attention   通过 mask 来做预测得到输出
+            Encoder 步骤是没有 mask 的
+            但其实到了 Bert， decoder 这一块直接被舍弃掉了
+             mask就是把某个词给替换成mask，相当于让这个词对网络不可见
+             https://zhuanlan.zhihu.com/p/127774251    这篇文章 decoder 讲的比较详细
