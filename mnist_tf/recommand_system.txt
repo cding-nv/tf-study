@@ -1,0 +1,21 @@
+从稀疏矩阵到密集矩阵的过程，叫做embedding，很多人也把它叫做查表，因为他们之间也是一个一一映射的关系
+https://blog.csdn.net/weixin_42078618/article/details/82999906?utm_medium=distribute.pc_relevant.none-task-blog-BlogCommendFromMachineLearnPai2-1.channel_param&depth_1-utm_source=distribute.pc_relevant.none-task-blog-BlogCommendFromMachineLearnPai2-1.channel_param
+
+2.
+PS Worker的需求来源于推荐网络。在推荐网络中，特征数据通过embedding table保存，数据量最大可能达到TB级别，无法在Device侧保存，因此需要通过PS Worker方式将数据保存在Host侧的内存中
+推荐系统由通常三部分组成：Application case，Sparse net 和 dense net：
+   application case
+是具体运用场景，根据具体运用场景选择合适的算法和系统部署方式；
+   Sparse Net
+主要由稀疏数据和稀疏数据处理部分组成，其中最重要的是Embedding table存储和稀疏访问和通信；
+Embedding table的特点内存空间占用大（根据业务需求从几百MB~10TB），数据访问是离散稀疏访问，通信数据量大；
+   Dense Net
+部分是传统的NN模型以MLP、FC为主。
+Sparse Net部分的处理是推荐系统的难点。
+
+3.  PS worker 通信方式
+  PS和Worker间的通信复用TF的_Send/_Recv算子，基于gRPC实现
+  在PS模式下，不需要使用集合通信，因此不需要使用NPUDistributedOptimizer优化器
+
+4.
+DeepFM wided & deep 升级版 最核心的想法是让deep和wide部分共享参数，具体来说，他们用FM作为wide部分，DNN或者PNN作为deep部分，但是把FM的部分放到NN的embedding层之后，从而让它们共享embedding
