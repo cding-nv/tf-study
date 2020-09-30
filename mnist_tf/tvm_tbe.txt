@@ -1,0 +1,28 @@
+TVM provides two level optimizations show in the following figure. Computational graph optimization to perform tasks such as high-level operator fusion, layout transformation, and memory management. Then a tensor operator optimization and code generation layer that optimizes tensor operators. More details can be found at the techreport.
+简而言之，我们需要确保通过一种语言定义的函数能够被另外的语言调用，另外还要针对嵌入式设备最小化运行时核心
+
+TVM提供了一个最小化的C语言API，可以通过C语言API把PackedFunc嵌入到任何编程语言中
+lhttps://docs.tvm.ai/dev/runtime.html#tvm-runtime-system 
+lhttps://blog.csdn.net/sanallen/article/details/79397129
+
+https://blog.csdn.net/u011708337/article/details/107886695
+
+TVM   tensor virtual machine
+
+TBE          tensor boost engine
+TBE三种开发方式： 
+ DSL， TVM, TIK     
+容易， 适中， 复杂
+都是 python
+只有 DSL， TVM 可以用 RL 搜索，
+TIK 很精细，已经定义了 src 怎么切，stride多少
+GA tune  遗传算法Genetic Algorithm， 优+优 = 优  用于解决最优化的搜索算法，是进化算法的一种
+矩阵乘 已经有了人工模板 加 GA tune
+
+DSL 领域特定语言   domain specific language
+ 基于DSL开发的算子， 可以直接使用TBE提供的Auto schedule 机制， 自动完成调度过程， 省去最复杂的调度编写过程
+
+Halide lR 的中间表示  其特点是其图像算法的计算的是实现和硬件单元的调度是分离的
+将整个图像算法转换为高效率的多层for 循环    调度可以有程序员指定策略， 而图像算法的计算实现不需要修改
+
+TIK    Tensor Iterator Kernel        python 模块
