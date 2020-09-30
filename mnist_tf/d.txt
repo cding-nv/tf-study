@@ -68,3 +68,47 @@ set_flag  /   wait_flag 设置
 
 vector bound， mte bound， 。。。
 
+7.
+Davinci架构指的是AICore！
+
+
+
+TensorCore 很像 AIcore
+
+cube +  accu
+
+数据搬运
+
+tensor core 不需要关心数据搬运
+
+
+
+同时考虑到了  非nn网络模型， cblas， opencv， openVX
+
+
+
+晟腾310/910 芯片结构示意图
+
+
+
+ØL2 Buffer vs L2 Cache
+•同一个介质，两种使用模式
+•Buffer：程序员可见并可以直接读写（地址空间和DDR/HBM不重合）
+•Cache: 作为DDR/HBM高速缓存，程序员不可见
+
+ØDDR/HBM
+•DDR:  普通内存，带宽低/价格低
+•HBM： High Bandwidth Memory, 带宽高/成本高
+
+
+lDavinci架构相对于竞品(Nvidia / TPU等)的优势：
+p CUBE极致算力高 —— 同等功耗和面积下，Davinci Core比Nvidia V100/TPU 极致算力都高；功耗面积相似的情况下，晟腾910算力是Nvidia V100 2.1倍
+p 单DavinciCore内 CUBE/VECTOR/MTE 有效并行+丰富的片上Buffer和带宽， 让Davinci 能够高效的发挥极致算力，且有效控制功耗
+p 提供了硬件支持的Img2Col/格式转换等随路计算指令，方便了程序设计
+pMore… 等着大家去发现~~
+p
+l Davinci架构不足：
+p对编程人员要求比较高(事件同步、Buffer使用)，　编程易用性有待提升
+p大Cube在处理小网络或者小Channel时候效率受影响
+p软件生态才开始， 相关配套工具、包括Debug手段、PMU等都还不够丰富
+
