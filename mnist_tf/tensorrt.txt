@@ -1,0 +1,263 @@
+TensorRT官方发布了可支持的Tensorflow算子列表
+https://docs.nvidia.com/deeplearning/tensorrt/support-matrix/index.html#supported-ops
+
+release notes: 
+https://docs.nvidia.com/deeplearning/tensorrt/release-notes/tensorrt-5.html#rel_5-1-5
+
+docker: 
+https://ngc.nvidia.com/catalog/containers/nvidia:tensorrt
+
+opensource: 
+https://github.com/NVIDIA/TensorRT/tree/master/samples/opensource/sampleUffMaskRCNN
+
+convert mask rcnn to tensorRT
+https://forums.developer.nvidia.com/t/converting-mask-rcnn-to-tensor-rt/59956/31
+
+trtexec
+./bin/trtexec --model=/home/cding/workspace/pose_iter_584000.caffemodel --deploy=/home/cding/workspace/pose_deploy.prototxt --output=net_output
+
+
+	
+TensorRT 整体设计
+构建Network
+Build 优化 阶段
+执行阶段
+对比GE
+动态shape 及 对比GE
+
+
+
+
+caffe parser
+onnx parser
+uff parser
+
+Network {
+ 	addConvolution();
+	addSoftMax();
+	addPluginV2();
+	……;
+	NetworkTensors;
+	NetworkLayers;包含IPluginV2Layer 每个ILayer对应一个或多个node实现
+	inputs;
+	outputs;
+	……
+   }
+
+
+
+1. 创建 Graph
+
+class Graph {
+    tensors;
+    regions; region 是 memory 的抽象
+    nodes; node是kernel（算子）的抽象
+    inputTensors;
+    outputTensors;
+}
+Region 表示一片memory， 可以容纳一个或多个tensor.  初始化时每个tensor指向独立的region，但经过graph优化以后可以合并region 比如水平融合， eliding concatenation
+
+每个Tensor引用一个region，有起始地址， 长度
+
+
+
+NetworkLayer根据ILayer type 创建 node, 比如
+	convolution node
+	softmax node
+       PluginV2Node 
+       ……
+
+Node {
+    name;
+    input tensors;
+    output tensors;
+    precision;
+    ……
+}
+
+
+layer fusion
+融合，多个节点合并成一个节点，可以减少 kernel launch 的次数，提升GPU使用率，优化memory存储
+垂直融合
+     定义fusion list
+     convolution + relu
+     fully connection + relu
+     scale + activation
+     convolution + eltwise sum
+     ……
+     先从graph里一个一个node去找有没有对应的pattern， 找到了就调用这个pattern的函数更新graph
+水平融合
+删除 slices
+删除 concatenations
+
+
+
+每个 region 被指定format， 
+每个node分配一个tactic， 且输入输出的format是确定的
+选择时间最小的  tactic/formats， 找最优算子
+
+    cudaEventRecord(context.start, context.cudnnStream)
+    layer.execute()
+    cudaEventRecord(context.stop, context.cudnnStream)
+
+
+每个算子可能有多种实现，比如
+
+Softmax：
+cudnnSoftmaxForward()
+Softmax.cu
+
+Convolution:
+Cask     
+Cudnn   功能全
+Group convolution
+Winograd  理论上计算量小
+
+
+Memory 优化
+   Allocating memory for each tensor only for the duration it’s usage
+每个tensor需要一个region
+多个tensor可以指向同一个region
+创建memory graph， 表示region 依赖关系
+当region不再需要时， 可回收再利用
+不允许在执行的时候 分配内存，理由：
+	1. malloc / cudaMalloc  很慢
+	2. cudaMalloc 是blocking 阻塞式的
+	3. malloc / cudaMalloc 消耗的时间不可控
+
+
+
+
+从engine创建context
+ICudaEngine* engine = runtime->deserializeCudaEngine(trtModelStream->data(), trtModelStream->size(), nullptr);
+
+IExecutionContext* context = engine->createExecutionContext();
+
+支持多个context同时运行
+提供阻塞 非阻塞两种接口
+需要初始化 cuda， cudnn， cublas context， 和cuda stream 等
+分配memory 
+
+
+iPlugin
+1.  class IPluginV2 {
+      Initalize;  engine 创建的时候调用
+      output tensor dimension;
+      enqueue();  执行
+      ……
+}
+
+2. register plugins and   注册到 mPluginCreatorList里
+//! look up the Plugin Registry during de-serialization
+
+3. class IPluginV2Layer : public Ilayer
+
+   IPluginV2Layer* Network::addPluginV2(ITensor* const* inputs, int nbInputs, IPluginV2& plugin)
+
+   IPluginV2是用户要实现的类
+   IPluginV2Layer 会加入到 NetworkLayers数组里， 不参与graph 优化
+   每个NetworkLayer会创建对应的node， IPluginV2Layer 会创建 PluginV2Node， PluginV2Node会调用到 用户实现的 IPluginV2 类
+   
+   
+   没有图拆分 不用关心底层不同engine
+
+TensorRT只用考虑支持 inference， 不考虑训练， 也没有计划支持训练
+
+算子开发统一基于cuda抽象层， cudabin嵌入在host exe中
+
+Davinci提供了硬件支持的Img2Col/格式转换等随路计算指令，方便了程序设计.  DGPU bgr转换和resize都是用cuda加速
+
+Davinci中的Cube处理小网络或者小Channel时候效率受影响。
+   Tensor Core 处理的卷积层 channel 数最好是32对齐， 不然
+   tensor Core 会加padding 从而有损耗
+
+omg.cc -> ParseGraph() 是 caffe/tf model 通过结构定义 ge_ir.proto 到 ge::graph->ComputeGraph 的过程
+    直接对应到算子
+Parser 里还有 优化？ 检查算子？ 为什么不能仅仅是构图？
+
+AddFMKNode  AddEdge  两部分， 
+    TensorRT 由 input tensor -> node -> output tensor  最小单元组合来确定整个网络
+
+不支持训练 不用关心训练时的动态shape
+
+图优化：转换算子插入、冗余消除
+
+
+
+
+1.  Dimension 的推导
+
+
+    加入了shapeTensor, 用于存储Shape信息的0维或1维tensor, 
+    用slice, Concat, ElementWise(mul/div 乘除运算), 
+    Gather, Padding, Reduce, Shuffle 等来推导dimension.
+
+
+2. Profile 
+
+   之前只需要对固定的dimension来选择最优的cuda kernel, 
+   现在有多种dimension, 所以引入了profile 来指定动态输入的最大max，最小min以及一个最优opt尺寸.
+
+  Profile实际上定义了所有动态输入的最大，最小以及一个最优尺寸。优化的结果能够保证最小到最大范围内的所有尺寸都能够使用这个engine运行，并且opt尺寸下拥有最优的性能
+
+
+
+ https://docs.nvidia.com/deeplearning/sdk/tensorrt-developer-guide/index.html#work_dynamic_shapes
+
+IOptimizationProfile* profile1 = builder->createOptimizationProfile();
+profile1->setDimension("input", OptProfileSelector::kMIN, Dims{4, {1, 64, 100, 100}, {}});
+profile1->setDimension("input", OptProfileSelector::kOPT, Dims{4, {2, 64, 200, 200}, {}});
+profile1->setDimension("input", OptProfileSelector::kMAX, Dims{4, {5, 64, 500, 500}, {}});
+config ->addOptimizationProfile(profile1);
+
+IOptimizationProfile* profile2 = builder->createOptimizationProfile();
+profile2->setDimension("input", OptProfileSelector::kMIN, Dims{4, {4, 64, 224, 224}, {}});
+profile2->setDimension("input", OptProfileSelector::kOPT, Dims{4, {4, 64, 224, 224}, {}});
+profile2->setDimension("input", OptProfileSelector::kMAX, Dims{4, {4, 64, 224, 224}, {}});
+config ->addOptimizationProfile(profile2);
+
+auto engine=buildEngineWithConfig(n, config)
+
+可以为网络设置多个Profile，对于每个profile的每个input，都必须完成最小，最大，最优三个尺寸的设置。设置builder， 调用buildEngineWithConfig生成engine。
+
+auto ctx0 = engine->createExecutionContext();
+int inIdx = engine->getBindingIndex("input");
+ctx0->setBindingDimensions(inIdx, Dims{4, {2, 64, 300, 300}});
+ctx0->executeV2(buffer);
+
+auto ctx1 = engine->createExecutionContext()
+ctx1-> setOptimizationProfile(1) 
+ctx1->setBindingDimensions(inIdx, Dims{4, {4, 64, 224, 224}});
+ctx1->executeV2(buffer);
+
+或者setInputShapeBinding设置input shape tensor的binding尺寸
+
+
+
+3. 支持动态dimension 的 kernel auto-tuning
+
+首先是整套DynamicShapes使用的数据。SymbolicNumber是一套符号数学系统。使用了HashBased CSE。
+
+SymbolicCoord，由它组成的SymbolicDims以及SymbolicFormat使用到了Symbolic number。可以对SymbolicCoord进行各种计算及判断操作。除非操作数都是常数，符号计算操作无法立即得到结果。可以通过==直接判断两个符号数是否相等
+
+Shape Context是符号计算的载体。所有的符号计算都需要被记录在ShapeContext中。ShapeContext存储在graph中，符号计算是通过ShapeContext完成的。例如，要计算两个符号数的乘法，需要调用shapecontext中的mul方法。
+
+Slots store the dimension during runner(node 算子) execution
+Runner（算子） 的Tensor/region/format may contain slot reference rather than actual dim
+
+sysbolicCoord -> 由shape compiler 翻译成 -> slot   -> 生成的 slot 来运行 tactic
+ShapeMachine是用于推断所有的Symbolic值的，并负责放入slot中
+
+最后build graph时，shapeTensor会被全部移除，转换成layer的Symbolic形式的参数
+
+在Execution阶段的流程：Engine内存储了ShapeMachine Routinue。在CreateExecutionContext时就分配了所有的资源。然后通过setBinding指定输入尺寸。在enqueue时计算所有slot值，之后调用每个层的recomputeResources计算资源。之后逐层执行
+
+
+GraphPrepare::FormatAndShapeProcess
+图拆分：增加二级拆分，先按unknown/known拆，再按归属引擎拆
+对于unknown shape 算子， tensorRT每个profile按最大分配， GE是动态刷新
+拿不到输入shape，无法正常编译、融合、分配内存 ？
+
+
+
+
