@@ -1,0 +1,119 @@
+海思/Tuscany/Docs/V100R001/V100R001C7X/07. 专项工作/05 TF 网络验证/04 Benchmark/C75/FPN
+海思/Tuscany/Docs/V100R001/V100R001C7X/07. 专项工作/05 TF 网络验证/04 Benchmark/C72/faster_rcnn_resnet50/
+
+huangqiang: http://gerrit.turing-ci.hisilicon.com:8080/#/c/248710/
+
+http://gerrit.turing-ci.hisilicon.com:8080/#/c/259025/
+
+http://gerrit.turing-ci.hisilicon.com:8080/#/c/256279/
+
+
+
+FPN
+https://github.com/DetectionTeamUCAS/FPN_Tensorflow/blob/master/libs/networks/build_whole_network.py
+https://zhuanlan.zhihu.com/p/61031520
+Assign_levels公式：https://picb.zhimg.com/80/v2-97539e22d5ce4a9b7a1e012716e0b265_720w.jpg
+
+https://zhuanlan.zhihu.com/p/35854548
+
+
+
+fasterRCNN
+论文： https://papers.nips.cc/paper/5638-faster-r-cnn-towards-real-time-object-detection-with-region-proposal-networks.pdf
+知乎： https://zhuanlan.zhihu.com/p/31426458      简书： https://www.jianshu.com/p/4891042ef7ef
+ https://github.com/tensorflow/models/blob/master/research/object_detection/g3doc/tf1_detection_zoo.md   -》 faster_rcnn_resnet101_lowproposals_coco
+https://gitlab.huawei.com/y00299078/blog/wikis/%E7%BD%91%E7%BB%9C%E5%88%86%E6%9E%90%E6%96%B9%E6%B3%95
+
+https://github.com/tensorflow/models/blob/r1.12.0/research/object_detection/g3doc/defining_your_own_model.md
+import_pb_to_tensorboard.py：https://github.com/rockchip-linux/tensorflow/blob/master/tensorflow/python/tools/import_pb_to_tensorboard.py
+
+俞郑中 网络分析 方法：  https://gitlab.huawei.com/y00299078/blog/wikis/%E7%BD%91%E7%BB%9C%E5%88%86%E6%9E%90%E6%96%B9%E6%B3%95
+    图：    http://topoe.inhuawei.com/share.html?shareby=y00299078&filename=faster_rcnn_coco%E6%80%BB%E8%A7%88&runas=Other&topoId=b9730ac5-24a4-4960-8622-d99a2cfd3d54_2020-05-29
+
+https://zhuanlan.zhihu.com/p/31426458
+a. 无论输入图像有多少个通道，输出图像通道数总是等于卷积核数量
+b. 对多通道图像做1x1卷积，其实就是将输入图像于每个通道乘以卷积系数后加在一起，即相当于把原图像中本来各个独立的通道“联通”在了一起
+c. 256-d：ZF-5 的最后一层输出 filter 的个数是256，因此每一个滑动窗输出是一个256维的向量。
+d. 2k 和 4k：首先解释一下k，在每一个滑动窗口的中心位置，预测k个候选区，这些候选区被称为 anchor（后文会解释）。2k是因为分类层的输出为目标为 foreground 和 background 的概率，4k则是每个 anchor box 包含4 个位置坐标
+
+Region Proposal Networks。RPN网络用于生成region proposals。该部分判断anchors属于foreground或者background，RPN网络里面的前景和背景的网络就相当于一个‘注意力’机制，再利用bounding box regression修正anchors获得比较精确的proposals
+
+e.  800x600 -> 800/16 x 600/16 = 50x38  每个点 256d    256x50x38
+从 tensorboard 来看  3x3的卷积 的weights 是   3x3x1024x512,  FirstStageFeatureExtractor 输出是 ？x ? x ? x 1024 
+在conv5之后，做了rpn_conv/3x3卷积且num_output=256，相当于每个点又融合了周围3x3的空间信息，同时256-d不变
+
+bbox positive/negative分类： 18 是   2 x 9 ，  2 代表 nagitive，positive， 9代表 9个anchor， 经过1x1的卷积后 输出图像为  W x H x 18
+CHW   （18， H，W）  -> (2, 9xH, W)
+bbox 坐标回归：  输出是  WxHx36
+
+f.  Proposal Layer负责综合所有 [公式] 变换量和positive anchors，计算出精准的proposal，送入后续RoI Pooling Layer
+Proposal Layer有3个输入：positive vs negative anchors分类器结果rpn_cls_prob_reshape，对应的bbox reg的 [公式] 变换量rpn_bbox_pred，以及im_info
+
+
+FPN:  https://arxiv.org/abs/1612.03144
+
+算子问题定位指导： http://3ms.huawei.com/hi/group/3554771/thread_8203572.html?mapId=10013492
+
+tensorboard
+How to view pb structure.
+
+Download: https://github.com/rockchip-linux/tensorflow/blob/master/tensorflow/python/tools/import_pb_to_tensorboard.py
+
+$ python /home/cding/tools/import_pb_to_tensorboard.py --model_dir ./20180408-102900.pb --log_dir ./
+
+$ tensorboard --logdir ./
+
+convert-to-uff ./my_model_June_19_NCHW.pb -t   生成pbtxt  比list 可以看到更多细节
+
+
+
+
+ResizeBilinear
+D上实现 推理中循环算子暂时支持不了，  正在开发函数式算子支持循环  while  loop 
+ResizeBilinear算子的输入是一串运算得到的，导致其输出为unkownShape。但是这里的运算都是基于原始图片的Shape进行的，而在D上转模型的时候都是指定的输入Shape，Shape是固定的。因此这块需要常量化掉，得到固定Shape输出。（由于D的限制，那么对于转换好的D模型，仅支持一种Size的图片）
+ResizeBilinear本身是支持多Batch的，没有必要通过循环来进行，通过循环反而性能比较低。
+
+方案1：
+
+循环展开，然后常量折叠：最终构成Split -> ResizeBilinear->Concat结构，对此结构进行融合变成ResizeBilinear
+
+
+//对这个图形做融合 Unpack->ExpandDim->ResizeBilinear->Squeeze->Pack 可以直接融合成为ResizeBilinear。   map  while 
+
+scope融合   KeepRatioResizeBilinear   依赖GE的一个功能？
+
+1.1                  GridAnchorGenerator      是不是不一样？
+由Shape开始都是常量运算，需要GE做常量折叠。
+
+方案1：
+
+GE做小算子常量折叠：Range、 Cast、 Mul、 Add、 Shape、 Slice、 ConcatV2、 Reshape、 Tile、 Pack、 Sub、 StridedSlice、 Equal、All、Assert、 Identity
+
+方案2：
+
+Scope融合成大算子然后在常量折叠。
+
+ 
+
+方案1：优点不用做融合，小算子支持，兼容性好
+
+方案2：优点不需要搞一坨的常量折叠算子。
+
+
+
+
+1.1                  ClipToWindow
+预选框为GridAnchorGenerator生成的，上面的可以常量折叠。同时Window来源于Shape中的HW，也是常量。因此也可以进行常量折叠。常量折叠的算子列表：Minimum，Maximum，ConcatV2，Split，Sub，Mul，Squeeze，Greater，Where，Reshape，Cast，Gather，Unpack。
+
+
+1.1                  Decode实现  后处理交给用户？  怎么知道 decode 在tensorBoard 中从哪到哪?
+对DecodeBBoxV2进行拆分，在前后加上transpose算子
+
+1.1                  BatchMultiClassNonMaxSuppression   超级大算子
+
+Map
+对Prediction中经过NMS的预选框做Normalize
+外层为对Batch的循环
+通过融合规则，对NormalizeBBox进行拆分，在前后加上transpose算子
+
+1.1                  Map1
