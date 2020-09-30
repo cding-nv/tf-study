@@ -1,2 +1,33 @@
 #pragma UNROLL的用法
 https://blog.csdn.net/u013625961/article/details/62422097
+
+7.
+单阶段和双阶段目标检测网络的差别，two stage的检测网络，相当于在one stage的密集检测上增加了一个稀疏的预测器，或者说one stage网络是 two stage的 RPN部分，是它的一个特例或子集
+https://aijishu.com/a/1060000000109128
+
+常规卷积
+输入  C H W， 卷积核 有N 个， 每个 C*K*K，   卷积核总参数量  N*C*K*K
+
+group convolution
+输入 CHW， 分成G组， 每组 C/G 个 feature map， 
+每个卷积核尺寸：  C/G * K * K
+卷积核仍未N个， 每组  N/G 个卷积核
+卷积核总数：  N * C/G * K * K   总参数量减少为 1/G
+
+当G=C 就是 depthwise 卷积
+
+8
+
+cudnn doc: 
+https://docs.nvidia.com/deeplearning/sdk/cudnn-developer-guide/index.html#overview
+https://s0docs0nvidia0com.icopy.site/deeplearning/sdk/cudnn-archived/cudnn_760/cudnn-developer-guide/index.html#cudnnConvolutionDescriptor_t
+
+9.
+孙轶同
+冷卢子未
+Flexible Transmitter Network
+complex-valued representation    
+引入 复数 可以应用于 Privacy protection
+脉冲神经元    spiking neural network  SNN
+人脑发送脉冲 数据传输稀疏性  
+局部学习 传统神经元是全局的学习
