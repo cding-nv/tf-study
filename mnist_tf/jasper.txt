@@ -1,0 +1,15 @@
+Just Another Speech Recognizer  https://arxiv.org/pdf/1904.03288.pdf    an ASR model comprised of 54 layers that can achieve sub 3 percent word error rate (WER) on the LibriSpeech dataset. 
+Jasper (Just Another Speech Recognizer) is a deep time delay neural network (TDNN) comprising of blocks of 1D-convolutional layers. Jasper is a family of models where each model has a different number of layers. Jasper models are denoted as Jasper bxr where b and r represent:
+
+b: the number of blocks
+r: the number of repetitions of each convolutional layer within a block
+
+We preprocess the speech signal by sampling the raw audio waveform of the signal using a sliding window of 20ms with stride 10ms. We then extract log-mel filterbank energies of size 64 from these frames as input features to the model.
+
+We use Connectionist Temporal Classification (CTC) loss to train the model. The output of the model is a sequence of letters corresponding to the speech input. The vocabulary consists of all alphabets (a-z), space, and the apostrophe symbol, a total of 29 symbols including the blank symbol used by the CTC loss.
+
+https://news.developer.nvidia.com/new-asr-model-speech-toolkit-interspeech2019/
+
+https://ngc.nvidia.com/catalog/models/nvidia:jaspernet10x5dr
+
+\\10.136.109.125\c75\Jasper\v2-jasper
