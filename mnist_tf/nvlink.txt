@@ -1,0 +1,7 @@
+reduceScatter
+AllReduce
+AllGather
+broadcast
+
+HCCL  华为集合通信库， 用于训练时参数通信
+rankTable File  用于描述HCCL信息的文件  
