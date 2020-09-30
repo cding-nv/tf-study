@@ -1,0 +1,5 @@
+1. Text sequence 输入的size 在训练的时候是固定的， 推理的时候可变长
+ 2. 输出为 mel output sequence， 每一帧为  1x1x80，  n 帧就是  1xnx80
+     gate output sequence 是用来判断 语音有没有结束， Text 可以有size知道结束， 但语音的mel 结束需要通过 这个 gate 来判断
+3. Bi-LSTM 就是两个单向的 LSTM， 一个从前往后， 一个从后往前， 最后把两个结果拼起来
+4. 多个Decoder 循环， 每一个decoder 输出一帧， 并作为下一个decoder 的输入， 初始decoder 的输入为全0  
