@@ -1,0 +1,9 @@
+1. 
+C++中为了避免名字定义冲突，特别引入了“名字空间的定义”，即namespace
+一句输出语句：cout<<"http://www.cppblog.com/andxie99";，事实上调用的就是 ostream& operator<<(ostream &temp,char *ps);这个运算符重载函数，由于返回的是流对象的引用，引用可以作为左值使用，所以当程序中有类似 cout<<"http://www.cppblog.com/andxie99"<<"白纸人生";这样的语句出现的时候，就 能够构成连续输出
+https://segmentfault.com/a/1190000010266504
+http://www.cplusplus.com/reference/sstream/stringbuf/
+
+2.  快速排序   https://juejin.im/post/5d507199e51d4561cc25f00c
+    堆排序： https://www.cnblogs.com/chengxiao/p/6129630.html
+    排序 演示：     https://www.cnblogs.com/onepixel/p/7674659.html
