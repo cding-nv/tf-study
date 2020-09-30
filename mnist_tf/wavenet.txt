@@ -1,0 +1,10 @@
+wavenet
+https://zhuanlan.zhihu.com/p/24568596
+https://blog.csdn.net/u013538664/article/details/102620167
+Wavenet is a generative model and takes raw audio inputs to generate high audio output when conditioned
+Mel features are created by actual TTS module from the text (tacotron2 for example), than you run vocoder module (Wavenet) to create speech.
+局部条件输入。首先是理解在TTS任务中，文本是如何转成语音的。这里使用了反卷积：Transpose Conv.。其做法是先训练一个CNN的语音转文字模型（STT）h = F(y)，然后转换成反卷积模型y = f(h)，通过这个反卷积模型，将文字转换成语音。然而，反卷积产生的语音品质非常糟糕，因此一般不直接拿来使用，而是作为WaveNet的条件引入。因此，可以把WaveNet看作为一个修饰器，将人工产生的（反卷积结果）的语音修饰为更接近人类的声音
+局部条件的建模
+
+mfcc 
+https://www.cnblogs.com/LXP-Never/p/11725378.html
