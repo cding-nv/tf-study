@@ -1,0 +1,17 @@
+https://www.zybuluo.com/w460461339/note/1158258  
+
+cnn+ attention
+
+GRU 和 LSTM 的区别：
+
+GRU和LSTM的性能在很多任务上不分伯仲。
+GRU 参数更少因此更容易收敛，但是数据集很大的情况下，LSTM表达性能更好。
+从结构上来说，GRU只有两个门（update和reset），LSTM有三个门（forget，input，output），GRU直接将hidden state 传给下一个单元，而LSTM则用memory cell 把hidden state 包装起来。
+
+DeepText： https://zhuanlan.zhihu.com/p/42868123
+整体上依然是Faster R-CNN的框架，并在其基础上做了如下优化：
+
+Inception-RPN：将RPN的 [公式] 卷积划窗换成了基于Inception[3]的划窗。这点也是这篇文章的亮点；
+ATC： 将类别扩展为‘文本区域’，‘模糊区域’与‘背景区域’;
+MLRP：使用了多尺度的特征，ROI提供的按Grid的池化的方式正好融合不同尺寸的Feature Map。
+IBBV：使用多个Iteration的bounding boxes的集合使用NMS
