@@ -1,0 +1,97 @@
+14. 
+bazel build tensorflow/tools/graph_transforms:transform_graph
+
+13.
+ checkpoint       参数和网络结构分开保存
+savedModel     参数和网络结构分开保存    Estimator
+frozen graphDef   参数和网络结构 一个文件  
+keras HDF5     可选
+在tensorflow 2.0中，推荐使用SavedModel进行模型的保存，所以keras默认导出格式是SavedModel，也可以通过显性使用 .h5 后缀，使得保存的模型格式为HDF5
+checkpoint 组成是由两个部分，三个文件组成，其中网络结构部分（meta文件），以及参数部分（参数名：index，参数值：data）
+tensorboard --logdir PATH_TO_CHECKPOINT: tensorboard 会调用events.out.tfevents.*     文件，并生成tensorboard
+
+SavedModel 格式是tensorflow 2.0 推荐的格式，他很好地支持了tf-serving等部署，并且可以简单被python，java等调用。
+
+一个 SavedModel 包含了一个完整的 TensorFlow program, 包含了 weights 以及 计算图 computation. 它不需要原本的模型代码就可以加载所以很容易在 TFLite, TensorFlow.js, TensorFlow Serving, or TensorFlow Hub 上部署
+
+https://zhuanlan.zhihu.com/p/113734249
+
+12. python notes
+     https://www.runoob.com/python/python-pass-statement.html
+
+11. graph transforms
+     https://github.com/tensorflow/tensorflow/blob/master/tensorflow/tools/graph_transforms/README.md
+
+     import_graph_def  http://digital-thinking.de/tensorflow-replace-tensors-of-a-savedmodel-or-frozengraph/ 
+
+10. stack 和 unstack 的用法 
+ https://blog.csdn.net/u012193416/article/details/77411535
+
+9. python  zip  用法
+    https://www.runoob.com/python/python-func-zip.html
+
+8.https://www.jianshu.com/p/a70c1d931395
+tf.nn.conv2d和tf.contrib.slim.conv2d的区别
+
+https://blog.csdn.net/qq_31780525/article/details/72280284
+tf.expand_dims()   tf.squeeze() 的区别
+
+https://blog.csdn.net/xwd18280820053/article/details/72867818
+tf.tile()  平铺之意，用于在同一维度上的复制 
+
+7.  教程
+http://c.biancheng.net/view/1886.html
+
+6.
+protobuf使用问题总结：
+protobuf使用不当可能会导致的问题：
+
+1、pb对象里string类型字段值被覆盖；
+
+2、pb对象析构时引发coredump。
+
+ 
+
+因此，来自于内存专家老唐对于protobuf的使用建议（能不用则不用）：
+
+1、只使用私有pb文件的（当前so使用的pb文件），静态连接protobuf，隐藏符号；
+
+2、使用公有pb文件的（当前so使用而且也提供给其他so使用的pb文件），当前so封装对pb对象访问方法给其他so使用，其他so禁止直接使用生成的pb.h里的方法，动态链接protobuf；
+
+3、既使用共有又使用私有pb的，按照公有pb的方式使用
+
+
+5. tensor Array,  range， TensorArrayScatter
+     10.244.59.213: /home/fwx5333162/cding
+
+4.
+环境： 10.244.59.213   fwx5333162  123456 
+$ conda activate py3.7.5
+
+3. frozengraph 模型
+
+2.  https://blog.csdn.net/gaofeipaopaotang/article/details/80598840
+https://www.jianshu.com/nb/26636353
+1. Tensor的封装，比较简单直接，适合接口中传递参数使用，但是在tf的内核中，Tensor的封装是tensorflow.Tensor，它的设计目标之一是为了能方便的使用线性代数运算库Eigen
+2. TensorFlow中Op代表一个基本运算，比如矩阵或则标量的四则运算
+运算定义主要有名称、属性、输入参数、输出参数。开发者通过宏REGISTER_OP来注册支持的运算
+在tf的设计中，运算和运算实现是两个分开的概念，通过引入的运算核(OpKernel)的概念来表示运算的具体实现。这么设计的原因是，运算的语义是平台不相关的，是不变的，而运算的实现运算核是跟具体的平台（CPU、GPU、TPU）相关的。这样，就可以很方便的对语义不变的运算提供不同平台的实现了。tf中的运算核也有注册机制，为一个运算提供多平台的实现
+3. Node是计算图的基本单位，可以为它绑定特定的运算，指定特定的设备（不指定的话，则服从默认的设备分配策略），指定输入节点等
+4. tf是通过session接口来驱动计算图的运算的，数据从输入节点输入，沿着计算图的有向边流经图中的其他节点，参与节点的运算，直到到达输出节点为止
+tf中的各种效率优化是分阶段多次执行的，在设备分配前、设备分配之后、计算图执行之前、计算图分区之前等，都有优化逻辑存在，涉及tensorflow.grappler.MetaOptimizer，tensorflow.OptimizationPassRegitry,tensorflow.GraphOptimizer等类
+
+1. Grappler
+Grappler是TensorFlow的优化模块
+tensorflow.grappler.GrapplerItem表示待优化的TensforFlow模型，主要包括计算图、fetch节点、feed节点。
+
+tensorflow.grappler.Cluster表示可以运行TensorFlow模型的硬件资源集合。一个进程同一时间只能创建一个Cluster.
+
+tensorflow.grappler.GraphOptimizer是grappler中所有优化类的父类
+
+tensorflow.grappler.MetaOptimizer.Optimize()作为所有优化实现类是入口，根据优化的配置选线决定是否调用之后的每个优化类
+
+tensorflow.gappler.ModelPruner类的主要优化逻辑是裁剪计算图，剔除不需要的节点
+tensorflow.grappler.ConstantFolding类的主要优化逻辑是做常量的折叠，所谓的常量折叠是将计算图中可以预先可以确定输出值的节点替换成常量，并对计算图进行一些结构简化的操作。 目前版本中，MaterializeShapes函数处理"Shape", "Size", "Rank"三类运算节点
+tensorflow.grappler.LayoutOptimizer类的主要优化逻辑是改变一些运算节点的输入数据格式来提高运算效率
+LayoutOptimizer 采用的优化方法是在适当的位置插入Transpose运算节点
+tensorflow.grappler.MemoryOptimizer的优化逻辑是降低设备的内存的占用
