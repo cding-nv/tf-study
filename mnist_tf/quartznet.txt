@@ -1,0 +1,39 @@
+8月份的版本（已发布），在H = 1的情况下，W已经可以支持到INT32范围，你们可以再试试加大切分粒度@liudenghui 00495682 
+
+离线推理Q4支持，动态shape8月中旬出方案
+
+
+
+
+
+
+
+https://arxiv.org/pdf/1910.10261.pdf
+https://github.com/nanoporetech/bonito
+
+
+
+
+FPGA   方案 ，   ARM 鲲鹏方案
+DeepVariant ，   Bonito， DeepMod 
+D310， D910 
+TGS 分析流程    NGS 分析流程
+动态shape 支持，  目前分档方案会造成性能下降
+模型优化 上升到 算子优化  调一下tiling
+
+
+quartznet
+1. depthwise separable convolutons
+     depthwise convolution + pointwise convolution
+encoder-decoder with Time-Depth Separable convolutions    TDS
+2.   T x w x c    time-steps, input width, channels
+      TDS module:   2D convolutions with kx1 convolutions  T x w  and fully-connected block 1x1 pointwise convolution   
+
+we replace the 1D convolutions with 1D time-channel separable convolutions, an 
+The main novelty in QuartzNet’s architecture is that we replaced the 1D convolutions with 1D time-channel separable convolutions, 
+an implementation of depthwise separable convolutions. 1D time-channel separable convolutions can be separated into a 1D
+depthwise convolutional layer with kernel length K that operates on each channel individually but across K  time frames
+and a pointwise convolutional layer that operates on each time frame independently but across all channels.
+
+T x c  time-channel format,   and decouple the time and channel-wise parts of convolution
+TDS has parameters: 
