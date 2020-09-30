@@ -86,3 +86,8 @@ chrome://tracing/
 •pytorch采用pybind11绑定后端C++实现。
 •Tensorflow 采用SWIG方式。
 swig  https://www.jianshu.com/p/ccd239bd11d9
+
+7.
+分类网络
+DeepSAR：独立识别每个属性。将每一个属性的识别当作二元分类问题，然后一个一个识别每个属性。
+DeepMAR：Multi-attribute learning for pedestrian attribute recognition  利用属性之间的关系，如长发更有可能是女性，所以头发的长度有利于帮助识别性别属性。将所有属性的识别一次性完成，多标签分类问题
