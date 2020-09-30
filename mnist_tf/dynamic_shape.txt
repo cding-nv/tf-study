@@ -1,0 +1,497 @@
+From Huimin
+1. 比如unique算子 是为了去重， 他的输出就是不确定的, 可以做之后的融合， 比如之后遇到 topK 就确定shape 了
+2. Judge 比如AICore和AICPU都支持b算子， 或者都支持FP32但只有其中一个支持int64， 又或者 cost 不一样， 则需要judge
+                                                         GraphManager::OptimizeStage1（）
+
+对于 known shape 的算子是指可以由 input shape 推导出来的算子， 编译出来的 OM 的输入shape是确定的 或者 是确定区间的，所以对应算子的内存也是确定的
+对于 unkonwn shape 的算子是指 由 input shape 都推导不出来的算子，需要执行的时候才能确定， 执行前算子的内存大小是不确定的
+
+3. 目前推理的 unknown shape  还不支持，采用什么分档的方法，   对特定网络有分析的采用 scope 融合来解决
+
+分档用于安防 离线推理， 比如分几个分辨率去图编译， 不允许执行的时候分配内存，编译刷新算子
+而对于集群推理 训练， host 资源较宽裕， 允许执行的时候分配内存， 编译刷新算子， 采用这样的动态shape 方案
+
+Node name: [Preprocessor/map/TensorArrayUnstack/TensorArrayScatter/TensorArrayScatterV3]. 
+input shape: []:DT_RESOURCE:ND [-1 ]:DT_INT32:ND [-1 -1 -1 3 ]:DT_FLOAT:ND []:DT_FLOAT:ND output shape: []:DT_FLOAT:ND 
+
+
+
+3. where算子  https://blog.csdn.net/ustbbsy/article/details/79564828
+
+From wanxuelei
+编译的时候有的会融合，比如两个aicpu算子 unique+where，会融合成一个funcop
+但执行的时候都是按照单算子执行的
+每次给这个算子单独分配内存
+ 
+其他未支持的算子，TRT单独执行时无法支持；在TF-TRT运行模式下，被留给Tensorflow动态执行    
+         是不是生成多个engine 分段执行 
+
+计算图出现unknown-shape的典型原因有：
+
+1、图中存在数据依赖型算子：其output shape与该算子的input内容/计算结果有关，无法直接根据input shape推导出output shape
+
+2、由于1的存在，导致Shape无法继续有效推导传递，直至出现固定shape的节点，中间区域都成为被‘传染’的算子；这些算子由于拿不到输入shape，无法正常编译、融合、分配内存。为什么？
+
+因此shape-unknown算子唯一的执行方案就是单算子执行：运行时，触发算子编译，再执行
+
+当前图编译&图执行对整图known-shape的依赖：
+
+Ø  TBE算子编译需要知道确切的shape
+
+
+Ø  GE分配Input&output内存，需要知道确切的shape，用于计算分配内存大小
+
+Ø  AICore算子不能覆盖全shape，在图拆分时，需要根据shape决定选择使用AICore算子还是AICpu算子  
+
+
+Ø  FE子图融合规则依赖Shape
+
+当前图编译对图执行的性能贡献
+
+Ø  算子融合：All-shape算子不涉及，部分shape算子无法做融合
+
+Ø  基于图全貌的内存复用&一次内存分配：Shape-unknown时，无法计算算子workspace、输出output大小，无法分配内存，也无法进行全图级别的内存复用
+
+Ø  一次图加载：shape-unknown时，无法在图编译阶段进行算子编译，也无法分配内存，这样的图无法一次加载
+
+Ø  格式转换算子抵消：格式转换抵消依赖于在算子前后插入正确的格式转换算子，而这依赖于知道算子的实现格式和网络指定的格式，算子的实现格式取决于算子选择的引擎，基于性能考虑，当AICore/AICpu同时提供一个算子时，优选AICore算子，对于all –shape的AICore算子，选择是个的，对于部分shape的AICore算子，无法在unknow-shape的情况下，确定选择AICore算子，因而无法正确插入格式转换算子，因而也无法进行格式转换抵消
+
+不做图优化/融合/编译，将无法获得算子融合和格式转换抵消的收益，按照当前的测试数据，这个收益在性能上有数量级的提升，因此对于unknown shape图，需要将图编译和单算子执行结合到一起，前者拿到性能收益，后者解决shape unkown算子的编译和执行问题。
+
+unknown shape 执行确定shape 之后动态分配内存？
+现在支持怎样的动态shape?
+目前训练的性能 和 tensorflow gpu 版本比较 ？ 
+
+高阶训练技巧，通过在训练过程中不同step/epoch间变换batchSize/dataSize达到加快训练收敛的目的
+
+不含有动态shape算子的计算图可整图优化、编译，一次下发，多次执行（是不是没有动态shape 就不会有子图优化？）；shape不确定会导致现有部分优化、融合无法支持，以及从一次编译/下发变为多次编译/下发。
+
+为尽量减少单算子调度带来的影响，需提供以下功能点保证性能：
+
+1、子图优化、融合支持不带shape信息；
+
+2、AICORE task生成不带shape信息；
+
+3、执行时，编译\准备\下发和计算执行并行流水；
+
+4、通过地址基址刷新，避免相同kernel多次下发；
+
+5、通过地址有效传递，避免数据跨HOST/device拷贝；
+
+6、AICORE算子采用二进制基本块等技术，避免shape变化时重新编译；
+
+
+
+•      图准备：支持unknownshape的传递推导
+
+•      图拆分：增加二级拆分，先按unknown/known拆，再按归属引擎拆，算子拆分与选择增加unknownshape的因子；
+
+•      图优化：支持不带shape信息的全图优化，包括转换算子插入、冗余消除 （比如nchw -> nwch -> nchw）；
+
+子图优化：支持不带shape信息的子图优化
+
+1、       图编译阶段流程（GECompiler支持处理unknow子图和know子图的遍历优化和编译）
+
+在infershape、inferFormat之后，识别图中是否有unknowshape算子，有则单独走一个流程入口函数：
+
+1）条件循环控制转换、包含FE整图优化(unknowshape提前拆分会导致fe融合识别不到)、转换算子融合优化（归一函数）
+
+2）unknowshape子图拆分（单独函数）
+
+For循环，按子图循环操作
+
+3）allreduce融合优化（归一函数，unknowshape下多图循环调用）
+
+4）子图拆分（归一函数，unknowshape下多图循环调用）  什么样的会不拆成子图？
+
+5）子图优化（归一函数，unknowshape下多图循环调用，fe内部区分unknowshape） 都是由FE来做？
+
+6）子图融合后的图优化（单独函数，删减部分pass，区分unknowshape子图，和knowshape子图，knowshape子图复用全know流程函数）
+
+7）图编译（单独函数，区分unknowshape子图，和knowshape子图，但都需要实现新函数）
+
+ 
+
+InferShapeInNeed做了2遍？拓扑排序的修改？
+
+
+2、GECompiler将计算图中无法推导出shape的节点拆分为unknowshape
+
+关键功能点：
+
+1）unknown shape节点的识别：
+
+若节点任意一个输入或者输出有一个shape是-1，则为unknown shape；
+
+2）unknown shape中间节点融合的逻辑：
+
+unknown shape节点之间如果有其他路径，需要将该路径上所有节点全部融合到一起（由于需要找到所有联通路径，使用广度遍历）；
+
+主要流程（本流程在原图优化阶段，调用FE原图优化之前）：
+
+1）遍历一遍原图，识别图中是否有unknown shape节点，若无该类型节点，则不需要做后续动作；
+
+2）对图中所有unknown shape的节点进行初始化，按照拓扑排序顺序进行编号，另外标记分配原则：若节点是unknown shape则初始化为”UNKNOWN_SHAPE”的标记，若是非unknown shape则初始化为”KNOWN_SHAPE”的标记；
+
+3）按照拓扑序遍历cluster，检查节点的父节点，有3种场景：
+
+a）若父子节点同为”UNKNOWN_SHAPE”标记，并且之间有其他路径，则将路径上所有节点融合到一起（此处与原图拆分逻辑不同，两节点间如果有连接路径，原逻辑是要将这两节点拆开，当前逻辑是要将路径节点融合成一张图），这里需要将中间路径所有节点记录下来，在发现之间有连接路径时，将路径上这些节点全部merge起来（这里merge的时候会改变图结构，需要注意）
+
+b）若父子节点均非”UNKNOWN_SHAPE”标记，则直接进行merge动作；
+
+c）若父子节点为非”UNKNOWN_SHAPE”和”UNKNOWN_SHAPE”，则直接不进行merge。遍历完毕后继续执行原图拆分流程（添加pld&end的时候出于性能考虑，仅添加个空pld&end ）
+
+
+
+
+3、含有通讯算子的拆分处理
+
+2种情况：
+
+1）     通讯类算子是unknowshape，直接划入相连的unknowshape子图，此时按照unknowshape通用逻辑拆分
+
+2）     通讯类算子是knowshape，但如allreduce算子，输入是unknowshape  此时识别与unknowshape相连的know算子很少，比如小于5个，则直接并入unknowshape子图
+
+
+
+考虑unknowshape中的通讯算子，与knowshape中的通讯算子分别处理，knowshape中的通讯算子单独融合，unknowshape中的暂不融合
+
+Allreduce的内存太大时，需要单算子调用。
+
+
+4、含有控制类算子（分支/循环）的图拆分处理（任峰）
+
+对主图中包括子图，子图单独识别unknowshape和knowshape。Infershape需要支持多图嵌套。
+
+
+
+rtStreamSwitch的图变换如上所示，unknowshape识别可以不受reStreamSwitch影响
+
+循环时，外部输入通过enter算子，enter算子可能会划入unknowshape子图
+
+ 
+
+5、含有unknow子图的infershape
+
+Infershape之前流程保持不变，包括：graph_optimize_.HandleSummaryOp、ProcessNetOutput、ProcessMultiBatch（unknowshape不支持开启，通过推理区分识别）。
+
+ 
+
+Infershape之后
+
+ptimizeAfterInfershapeByAtcParams保持不变，主要推理场景用，由于会按照用户指定输入更新输入输出节点的format、shape，如果shape为unknowshape则报错。未来如需要，将shape更新单独拆出，在图执行阶段更新；
+
+OptimizeForPreprocess中的pass修改：IteratorOpPass基本无用（因为没有循环下沉）。FlowCtrlPass：循环下沉关闭。条件语句不支持非funcDef格式的，校验识别，其他不变；
+
+UpdateVariableFormats保持不变
+
+ 
+
+算子补充支持unknowshape的推导。FrameworkOp可能导致输入输出的shape不一致，输入know输出unknow，GE优化FrameworkOp的算子得补原型库和infershape函数。主要是identity。
+
+流程归一
+
+ 
+
+6、含有unknow子图的inferFormat
+
+Unknowshape算子如果依赖shape识别的，需要设置为Nd
+
+流程归一
+
+ 
+
+7、含有unknow子图的原图优化
+
+FE统一将转换算子前提放到原图优化阶段
+
+GE先调用FE的图融合接口
+
+GE再调用输入输出format dtype刷新pass
+
+GE再调用FE转换算子选择和插入接口
+
+GE触发转换算子融合、对消，常量折叠等pass, reshape消除、dimension_adjust
+
+流程函数归一
+
+ 
+
+原图优化融合的算子的infershape
+
+ 
+
+1、FE原图优化
+
+1)  识别出对shape敏感的pass，对此类pass进行修改，增加判断条件，直接返回。（注：虽然有unknown shape但不依赖shape处理的，不需要修改）
+
+        XXXpass{
+
+            If (unknown shape影响处理)
+
+                warning(“xxxpass cannot be applied for unknown shape”).
+
+                return success
+
+}
+
+对shape敏感的pass列表(不限于此)：
+
+fusion_engine/graph_optimizer/graph_fusion/fusion_pass_manager/builtin_pass/quant_pass/quant_rollback_bias_optimize_pass.cpp ： pass不执行，不能选择最佳性能，仅影响性能
+
+fusion_engine/graph_optimizer/graph_fusion/fusion_pass_manager/builtin_pass/derelu_fusion_pass.cpp Relu复制dim，给reluv2 pass不执行，影响性能
+
+ops/built-in/fusion_pass/padd_conv2d_fusion_pass.cpp conv2dNode->GetInDataAnchor(0) 校验， pass不执行，影响性能
+
+ops/built-in/fusion_pass/layernormgrad_fusion_pass.cpp LayerNormGrad->GetInputDesc(4) 属性， pass不执行，影响性能
+
+ops/built-in/fusion_pass/reshape_transpose_fusion_pass.cpp ， pass不执行，影响性能
+
+ops/built-in/fusion_pass/transpose_reshape_fusion_pass.cpp ， pass不执行，影响性能
+
+ops/built-in/fusion_pass/avg_pool_grad_fusion_pass.cpp AvgPoolGrad->GetOpDesc()->GetInputDesc(1) 校验，辅助矩阵计算， pass不执行，
+
+ops/built-in/fusion_pass/conv2d_group_pass.cpp convDesc->GetInputDesc(1) 数据交换 补conv2d算子实现 ， pass不执行，影响功能
+
+ops/built-in/fusion_pass/deconv_group_fusion_pass.cpp deconvDesc->GetOutputDesc(0)  数据交换  ， pass不执行，影响功能(补conv2d算子实现 )
+
+ops/built-in/fusion_pass/diag_fusion_pass.cpp diagVNode->GetInDataAnchor(0) 辅助矩阵计算 ， pass不执行，影响功能(走aicpu)
+
+ops/built-in/fusion_pass/diag_part_fusion_pass.cpp diagpartVNode->GetInDataAnchor(0) 辅助矩阵计算
+
+flattenV2Desc->GetInputDesc(0) 辅助矩阵计算
+
+ops/built-in/fusion_pass/gather_v2_fusion_pass.cpp 校验unknowshape，-1不改图，， pass不执行，影响性能
+
+matrixdiagVNode->GetInDataAnchor(0)
+
+辅助矩阵输入shape为unknowshape，无法生成辅助矩阵，不能走融合生成带D的算子，需要走aicpu（）[L(TSD1] 
+
+有些辅助矩阵已考虑unknowshape的场景，校验到则不走融合，pass不执行，影响性能
+
+2)  Opjudge
+
+a)  Checksupport是对shape（目前没有非全all，新增的需要列出来），attr，dtype的检查。后面有新增非全all的需要走aicpu。
+
+b)  部分dynamic format算子根据shape得到format，当前format可能会获取不到，使用原始format。
+
+c)  对于算子支持的格式，特别是broadcast类的，reduce类的，由于没有shape信息，这一类算子不能选择重型格式。只能选择原始format，且Dtype也只能选择原始的Dtype;------算子承诺能支持c轴广播
+
+d)  重型算子扩散代码中会查看当前算子支持的Format，如果支持的Format是动态的或者是BroadCast和Reduce类的（这类算子依赖shape去决定能够支持哪些重型格式），那么扩散会停止，会造成转换算子的个数变多一些（其他地方扩展过来的头尾会插转换算子）,需要考虑性能调优
+
+e)  改format，不改shape
+
+3)  格式转换插入
+
+由于没有shape信息，需要GE支持对于转换算子的shape填写，因为unknown的format只能是原始format，所以需要GE根据Format正确的填写转换算子输入输出的shape（涉及到轴的对应，大部分情况可以直接使用前一个known算子的原始shape，中间unknown的部分由于大家都使用原始Format不涉及到插入转换算子，只有在Uknown-shape那段网络的和known的交汇点才有可能有格式转换）。---运行态考虑对消
+
+ 
+
+ 
+
+8、含有unknow子图的子图优化（ub融合、算子编译）
+
+Checksupport支持unknowshape
+
+Unknow子图不触发算子编译，针对ub融合，ub融合解除对shape依赖前，ub融合不可用、fe不标atomicClean属性
+
+GE流程函数归一。Fe内部区分
+
+ 
+
+fe子图处理
+
+对于unknown shape的子图，部分节点无法计算size，无法进行编译，无法进行L2 buffer优化，无法进行ub融合，无法进行ddb处理，仅保留子图阶段不依赖shape的node优化处理pass
+
+ 
+
+Aicpu子图融合会导致执行器infershape不知道咋执行
+
+ 
+
+9、含有unknow子图和know子图合并后二次图优化
+
+依赖保留：AdjustBroadCastOpData等操作、LinkGenMaskNodesPass、AtomicAddrCleanPass（unknow子图无法处理，TBE需要支持自动插clean算子模式）、MultiBatchPass（不支持）、ControlOpAttrPass、CompileNodesPass（可以删除）、streamoptimizer（不支持）
+
+流程函数不归一，GE新写入口函数
+
+ 
+
+10、含有unknow子图的图编译处理，包含内存分配和复用
+
+图编译中的SecondPartition保留（但意义不大），PreBuildModel保留
+
+BuildModelForGetTask：修改，删除内存分配
+
+GetTaskInfo：unknowshape子图不调用task_generator.GetTaskInfo
+
+ 
+
+当存在unknow子图时，无论know子图还是unknow子图的算子的内存分配和复用都关闭，因为unknow算子会动态分配内存，导致已分配的地址偏移可能被人占用，或者动态分配无法使用。
+
+后续二阶段优化：内存需要划分2类。子图内生命周期结束的内存，在know子图中分配。但此内存区域unknow子图的动态内存分配得识别，保证出了unknow子图不再占用此块内存。
+
+ 
+
+11、含有unknow子图的genTask
+
+know子图的图编译复用老流程代码
+
+Unknow子图的图编译删除genTask的调用，所有算子不生成task。后续二阶段遍历子图中的op，识别其是否是unknowshape算子，如果不是，生成task，并将taskDef记录到op对象中去
+
+genTask和算子编译考虑引入缓存机制
+
+    针对通讯类算子----是否需要genTask？
+
+1.1.1  图执行器
+现有的GEExecutor不具备执行能力，为编译好的离线模型分配实际内存后整个模型下发至TS执行，执行过程中Device侧无需与host交互，结束后将结果返回至指定输出内存。
+
+支持执行处理含有动态shape的图，涉及新增特性：
+
+1、提供高性能的调度引擎，根据待执行图中节点的依赖关系、节点的可执行度（已编译生成算子kernel、可分配内存、已生成task）下发至TS执行，通过数据描述和数据存储分离，支持数据信息有效传递并减少数据搬移，通过准备队列和执行队列的多线程并发，降低Host侧调度准备开销的影响；
+
+2、提供异步执行机制，对于HCCL类的使用通信计算资源的独立计算模块，允许在通信的同时调度执行其他无数据依赖的AICORE计算任务，提高AICORE利用率；
+
+3、提供单个算子的输入输出内存、workspace内存的申请释放机制，并提供二级cache，提升内存利用率的同时降低内存申请开销；
+
+4、提供控制算子的HOST CPU kernel实现(if/while/case/for)，用于完成控制调度逻辑；
+
+ [L(TSD1]全部走AICPU性能不可行，需要考虑在动态混合执行模式下保留选择非D版本；
+
+
+
+
+•      功能流程差异点
+
+•      静态执行
+
+•      图+单算子混合动态执行
+
+•      执行阶段
+
+•      HOST/DEVICE数据拷贝
+
+•      只有input和output拷贝
+
+•      数据依赖类算子需要将数据拷贝到HOST才能触发后继节点的shape计算、内存计算、算子编译
+
+•      或提供Device侧的shape计算核函数，仅将计算结果返回host
+
+•      Shape推导
+
+•      编译时已完成，执行时无需推导
+
+•      单算子执行前都需要推导
+
+•      算子编译
+
+•      编译时已完成，执行时无需编译
+
+•      All-shape类算子不需要编译，需要做.o选择
+
+•      实时编译：每种shape首次执行前触发编译
+
+•      OutputSize/WorkspaceSize计算
+
+•      编译时已完成，执行时不需计算
+
+•      不同shape单算子执行前都需要计算
+
+•      genTask
+
+•      编译时已完成，load时一次性下发
+
+•      不同shape单算子执行前生成
+
+•      内存申请
+
+•      一次从Driver申请，按编译时计算的偏移值刷入算子的Args，运行时无变化
+
+•      一次从Driver申请，放入二级缓存池
+
+•      算子新增二层基址地址管理，每次执行前后按实际分配的地址刷新基址
+
+•      Kernel下发
+
+•      一次下发
+
+•      新增kernel和.o cache状态，每种shape首次执行前下发
+
+•      非首次执行不用下发，只刷新基址
+
+•      Stream并行调度
+
+•      支持计算类任务和通信类任务并行调度
+
+•      支持AICORE和AICPU并行调度
+
+•      支持AICORE之间的并行调度（BPN+1与applyN并行）
+
+•      所有计算类任务串行执行
+
+•      通信类任务并行，通信和计算和并发度依赖拓扑排序结果
+
+ 
+
+1.1.1  离线模型支持表达已编译和未编译部分
+
+图中绿色字段表示离线模型新增属性；
+
+Ø  compileStatus == ‘Complete’
+
+•           解析流程不变；
+
+Ø  compileStatus == ‘Particial’
+
+•           Semi-Graph：半编译后的图
+
+•            known部分：
+
+ü       已编译成Task，在图中用Graph-Node表示；
+
+•           Unknown部分：
+
+ü       已完成融合
+
+ü       转换算子插入/消除
+
+ü       已完成算子引擎/实现选择
+
+ 
+
+方案一：未编译（Unknown）子图平铺表达
+ 
+
+
+
+方案二：未编译（Unknown）子图嵌套表达
+
+
+ 
+
+对比
+
+复杂度
+
+性能
+
+方案一
+
+低：
+
+与原有图表达逻辑相同
+
+高
+
+unknown部分全部单算子执行，单个算子执行Ready依赖度低，异步并行概率高
+
+方案二
+
+中：
+
+嵌套表达，子图递归处理，逻辑清晰
+
+低
+
+子图间依赖关系多，全部满足后才能触发后继算子执行，异步并行概率低
+
