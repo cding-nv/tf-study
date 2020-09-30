@@ -1,0 +1,217 @@
+
+数据参数:
+ØFeature Map: [N,H,W,C] => [256, 14, 14, 256]
+ØWeight:  kernel = 3x3, out_c = 512, stride = 1, pad =1
+ØOutput: [256, 14, 14, 512]
+ØData type = fp16
+Ø
+q卷积API参数：
+Ø使用的卷积算法为：algo = CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM
+
+cuDNN卷积用例(调用Tensor Cores)
+
+
+1.设置输入矩阵的信息
+int dimA[] = {256, 256, 14, 14};
+int padA[] = {1, 1};
+int strideA[] = {1, 1};
+int filterdimA[] = {512, 256, 3, 3};
+cudnnTensorFormat_t  filterFormat = CUDNN_TENSOR_NHWC;
+
+2. 创建一个cuDNN handle
+checkCudnnErr(cudnnCreate(&handle_));
+
+3.  创建输入输出Tensor，卷积操作描述符
+checkCudnnErr( cudnnCreateTensorDescriptor( &cudnnIdesc ));
+checkCudnnErr( cudnnCreateFilterDescriptor( &cudnnFdesc ));
+checkCudnnErr( cudnnCreateTensorDescriptor( &cudnnOdesc ));
+checkCudnnErr( cudnnCreateConvolutionDescriptor( &cudnnConvDesc ));
+
+4.分配显存，内存并初始化
+cudaMalloc((void**)&(devPtrI), (insize) * sizeof(devPtrI[0]));
+hostI             = (T_ELEM*)calloc(insize, sizeof(hostI[0]));
+initImage(hostI, insize);
+checkCudaErr(cudaMemcpy(devPtrI, hostI, sizeof(hostI[0]) * insize, cudaMemcpyHostToDevice));
+
+5.设置输入输出Tensor，以及卷积计算的data type
+checkCudnnErr( cudnnSetTensorNdDescriptor(cudnnIdesc, dataType, convDim+2, dimA_padded, strideA_padded) );
+checkCudnnErr( cudnnSetFilterNdDescriptor(cudnnFdesc, dataType, filterFormat, convDim+2, filterdimA_padded));
+checkCudnnErr( cudnnSetTensorNdDescriptor(cudnnOdesc,dataType,convDim+2,outdimA_padded, outstrideA_padded) );
+checkCudnnErr( cudnnSetConvolutionNdDescriptor(cudnnConvDesc,
+                                               convDim,
+                                               padA,
+                                               convstrideA,
+                                               dilationA,
+                                               CUDNN_CONVOLUTION,
+                                               CUDNN_DATA_FLOAT );
+
+6.  设置math type允许cuDNN调用Tensor Cores
+checkCudnnErr( cudnnSetConvolutionMathType(cudnnConvDesc, CUDNN_TENSOR_OP_MATH) );
+
+7. 择一个支持的卷积算法
+cudnnConvolutionFwdAlgo_t algo = CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;
+
+8. 分配workspace，指向进行卷积操作时需要的GPU空间的指针
+checkCudnnErr( cudnnGetConvolutionForwardWorkspaceSize(handle_, cudnnIdesc, 
+                                                       cudnnFdesc, cudnnConvDesc,
+                                                       cudnnOdesc, algo, &workSpaceSize) );
+if (workSpaceSize > 0) {
+   cudaMalloc(&workSpace, workSpaceSize);  // workSpaceSize为卷积空间的大小,本例为1184Bytes
+}
+
+9.  调用卷积运算
+checkCudnnErr( cudnnConvolutionForward(handle_, (void*)(&alpha), cudnnIdesc, devPtrI,
+                                       cudnnFdesc, devPtrF, cudnnConvDesc, algo,
+                                       workSpace, workSpaceSize, (void*)(&beta),
+                                       cudnnOdesc, devPtrO) );
+10. 清除显存，内存
+cudaFree(), Free()
+
+测试结果
+l用Nvprof 工具显示运行结果，看到运行时调用了库函数
+volta_fp16_s884cudnn_fp16_128x128_ldg8_relu_f2f_exp_small_nhwc_tn_v1
+运行时间1.4ms
+l库函数信息：
+    Share memory：33280 =32.5KB;  REG:254;   CONSTANT[0]:1196
+
+本用例中用户指定的数据layout为NHWC, 函数调用关系如下:
+Ø  cuDNN对用户开放的API: cudnnConvolutionForward
+Ø调用cudnn::gemm::computeOffsetsKernel(cudnn::gemm::ComputeOffsetsParams)
+Ø调用cuDNN库(对应.o文件）里面的kernel(sass代码) volta_fp16_s884cudnn_fp16_128x128_ldg8_relu_f2f_exp_small_nhwc_tn_v1
+Ø
+
+卷积操作函数调用关系
+
+如果输入数据layout指定的是NCHW，函数调用层次如下:
+cuDNN对用户开放的API: cudnnConvolutionForward
+调用nchwToNhwcKernel函数 (有单独的.o文件，该文件可以dump出ptx代码和sass代码)
+调用cudnn::gemm::computeOffsetsKernel(cudnn::gemm::ComputeOffsetsParams)
+调用cuDNN库(.o文件）里面的kernel (sass代码) volta_fp16_s884cudnn_fp16_128x128_ldg8_relu_f2f_exp_small_nhwc2nchw_tn_v1
+
+库函数
+•库函数是一个模板。完成不同的shape通过constant memory的参数决定。
+      包括以下：地址计算，循环次数，分支跳转等。
+•Constant memory对device来说只读，对于host可读可写。  位于DRAM 中, The constant memory space is cached.
+       这个库函数consant大小为1196B
+•每个warp的一个循环处理M(64)*K(32)*N(64)的矩阵乘法
+        循环次数从constant memory中获取
+•数据从DDR搬运到share memory时显示的进行img2col展开。        img2col通过从constant memory中读取 地址索引以及一些计算来完成
+•库函数占用Share memory 32.5KB。不能被设置
+
+conv<<<grid dim, block dim>>>(arg0, arg1, ... in constant memory)
+-> 从ddr搬数据到share memory （img2col展开） Partial sum = 0 -> Bar.syn
+-> loop 卷积 64*32*64 每个block处理128x128  -> Loop_k 最后一个循环？ -> 继续loop
+-> bar.syn -> 卷积后处理
+
+库函数-卷积后处理
+•每个thread有128个卷积element要处理，分为4个循环完成。每个循环处理32个element
+• 第一个做ax+b操作，其中a是标量，b是channel wise
+•把结果保存到share memory，128个thread，总共占用18KB（实际需要16KB，内部有些offset）
+•上一步的结果保存之后，重新做tiling。每个thread从share memory读取相应的32个数据到register
+•B=MAX(A,threshold)
+•f32转换成f16
+•上一步转换后每个寄存器只有16bit有效，这一步把两个寄存器的值concat到一个寄存器
+•把32个数写入到DDR中
+
+库函数 性能分析
+•总的时间分为三部分：
+• 1. 头开销。搬运第一块fm和weight的时间，大小为128*16+128*16个数
+• 2. convolution计算。这时搬运数据都掩盖在convolution计算中
+• 3.尾部开销。 卷积后处理，包括vector和搬运数据到DDR。
+        疑问：vector和搬运数据到DDR是否能够并行？
+        在vector处理中有一些bar.sync操作会导致不能完全并行，但会有一些overlap  
+
+M=N=4096
+横轴 K， 从2的5次方开始 到2的13次方， 
+纵轴从0开始 到100000 GFLOPS， 曲线在K方向上基本上线性增长，从20000 增长到95000左右， 再往后就不变了
+
+从图中可以看出，如果M和N固定，对于K很小的shape，由于头尾开销的原因，将会导致性能很差。理论上K越大性能越好。
+根据上一页分析了一些shape的理论性能。（简化计算：假设vector和搬数据到DDR不能并行）
+
+
+卷积切分
+Grid size=(392 4 1)   block size=(128 1 1 )
+
+•一共分为392*4个block执行
+•每个block有128个thread/4个warp
+•每个warp执行64（M）*K*64（N）的卷积
+•卷积实现细节：
+      1) 每个循环实现64*32*64的运算。包含
+            512条HMMA条指令。
+            HMMA指令之间做了interleave，
+           HMMA和LD指令做了interleave   (interleave the shared memory instructions with a proper number of Tensor Core instructions)
+     2) 循环次数loopk是由constant memory传入
+     3) share memory是显示保存img2col
+         展开后的数据（16.25KB）
+
+Registers
+64*32*64 使用寄存器
+      B矩阵
+A矩阵 C矩阵
+问题 ： 为了提高性能，与mem操作都是LD.128, ST.128   8个byte连续载入寄存器
+A和B矩阵没有问题，C矩阵的数据排列不连续。存在问题
+
+A矩阵在share mem
+•A矩阵大小为128(M)*32(K)
+•在share mem中按照右图格式排列
+•按照K方向分为4块A0，A1，A2，A3
+     每块内部z字排列。每块的一行有8个数据
+     不是按照16*16的分型排列
+     这里是为了bank冲突的需要，一开始，所有thread读取
+    前8个channel。如果排列方式是32个channel连续，
+    那么会导致所有的thread读取前16byte数据。
+
+•每块大小为128*8*2=2048 byte。
+        块与块之间间隔32byte
+
+横轴K方向分4部分， 0~7， 8~15， 16~23，24~31
+纵轴M方向， 128 个数据， 一个warp读取 16*8 
+相对地址， 0， 2080 = 65x32， 难道是128x16？保存128个数据每个16位， 4160， 6240
+
+困难：
+1.只分析了share mem的读取。Share mem如何与ddr的地址对应
+暂时没有能力分析,地址计算涉及了constan mem内容
+问题：
+1.为什么块与块之间留32byte的空隙？
+
+B矩阵在share mem
+•B矩阵大小为128(N)*32(K)
+•在share mem中按照右图格式排列
+•按照K方向分为4块B0，B1，B2，B3
+     每块内部N字排列。每块的一列有8个数据
+     不是按照16*16的分型排列
+    这里是为了bank冲突的需要，同A矩阵。
+•每块大小为128*8*2=2048 byte。
+        块与块之间间隔32byte
+
+困难：
+1.只分析了share mem的读取。Share mem如何与ddr的地址对应
+暂时没有能力分析
+问题：
+1.为什么块与块之间留32byte的空隙？
+
+不同shape的性能
+这个例子的batch数量比较大，尝试了其他几种shape，保持M=batch*H*W不变
+结果显示性能不变。
+
+卷积后处理-1
+•一个wrap处理完卷积后有64*64个寄存器。如下图所示thread0 的寄存器在矩阵中的位置。
+•通过四个循环完成卷积后处理，每个thread 每个循环处理32个数据。
+•卷积后处理的数据首先进行y=ax+b处理，处理完的数据，每4个寄存器连续保存到sharemem中。
+        thread 0的32个数据保存位置大致如下。灰色部分是其他thread的数据。白色部分是空白
+        
+        中间空64byte，thread1的地址偏移64byte，解决bank冲突
+
+卷积后处理-2
+•重新tiling，如右图。Thread0 读取右图中的32个数。
+•计算max(a,threadshold)
+•Fp32转成fp16
+•每两个fp32 concat成一个fp32
+•把16个寄存器写入DDR，也是4个寄存器连续写入DDR(STG.128)
+        也就是8个channel数据连续写入DDR
+•举个例子：8个channel在 矩阵C 寄存器位置如下：
+        [R0,R1,R4,R5,R32,R33,R36,R37]
+        如果输出是NHWC格式，他们的output channel应该如下排列。
+    猜想： B 矩阵搬运到share mem做了这种 output channel的交换。
+
+重新tiling的目的是能够外部DDR的连续32byte地址
