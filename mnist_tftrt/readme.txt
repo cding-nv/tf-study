@@ -236,3 +236,134 @@ Denis: In MLIR we can target native device code only by LLVM IR, so that mean we
 
 Question：我们当初为什么没有考虑基于XLA实现一个npu 的backend 省掉一些GE pass
 熊老师： 两个原因：1）我们没有XLA的控制权，无法合入XLA主线，不能自由的发展；2）我们除了要支持TF，还要支持其他框架，尤其是我们自研的MindSpore；
+
+========xla========
+1. 安装
+configure时启用调试选项
+Please specify optimization flags to use during compilation when bazel option "--config=opt" is specified [Default is -march=native]: -O0 -g
+编译：
+bazel --output_user_root=build build --config=opt -c dbg //tensorflow/tools/pip_package:build_pip_package
+打包：
+bazel-bin/tensorflow/tools/pip_package/build_pip_package /xxx/path_to_build/tensorflow/build
+安装：
+pip install --user build/tensorflow-1.2.1-cp27-none-linux_x86_64.whl
+so存放于 ~/.local/lib/python2.7/site-packages/tensorflow/python/
+
+2.调试 
+设置环境变量开启log打印（max=10）：export TF_CPP_MIN_VLOG_LEVEL=2
+启动 gdb -args python mnist_soft_xla.py
+在gdb命令行下设置源代码搜索目录dir /path_to_tensorflow/bazel-tensorflow
+
+3. mnist_soft_xla.py
+   -> CPYTHON 解释器
+        1. session configure sess= tf.Session(config=config)
+               registration (all sessions, devices, kernels); create direct session ; create device
+         全局变量初始化
+         训练train    tf.global_variables_initializer().run(session=sess)
+       2. session->Run()  -> GetOrCreateExecutors() -> CreateGraph -> graph->optimizer() -> CreateExecutor
+          createGraph：  建立基础graph，标记所有xla可用节点，xla节点打包形成cluster节点（可那出现多个cluster节点）
+          graph->optimizer()   一系列优化pass，RemoveDeadNodes()，RemoveIdentityNodes()，ConstantFold()，FixupSourceAndSinkEdges()，OptimizeCSE()，ExpandInlineFunctions()  ...
+          createExecutor： 建立控制流信息；根据node所在的device，以及node的类型，创建cpu kernel或gpu kernel等；每个kernel有自己的compute函数，在执行kernel时会被调用进行计算；XLA cluster将会在后面进行编译，不在此进行创建
+
+4. 整体过程
+     session->run(); -> 
+     GetOrCreateExecutors() ; ->
+     executor->RunAsync(); -> 
+         push root node into ready_queue;
+         while(!ready_queue.empty()) {
+        node = ready_queue.frone();
+    op_kernel = node.kernel;
+    device->compute(op_kernel);
+    push next nodes to ready_queue;
+         }
+    -> Constant kernel Compute()  
+         MatMulOp kernel Compute() -> cuBlasSgemm()   Eigen3    cuBlas， cuDNN， Eigen3或者其他
+         Softmax kernel Compute()   ->  Eigen3    cuBlas， cuDNN， Eigen3或者其他
+         GeOp
+         XlaOp kernel Compute()  ->  XLA JIT Compile 依赖LLVM编译
+
+REGISTER_OP("GeOp")
+REGISTER_OPTIMIZATION(OptimizationPassRegistry::POST_REWRITE_FOR_EXEC, 2, OMPartitionSubgraphsPass);
+REGISTER_OPTIMIZATION(OptimizationPassRegistry::POST_PARTITIONING, 101, OMPartitionSubgraphsPass);
+
+
+5. XLA JIT Compile 过程
+   第一步，CompileGraph()  转化计算图为 HLO reuqest 
+   第二步，BuildExecutable()   
+   a.	Lowering HLO request 为 HLO instruction; 
+   b.	DFS order; 
+   c.	optimize HLOModule;
+   d.	HloConstantFolding, HloCSE,GpuInstructionFusion,... 10+ pass
+   e.	Build HloSchedule, bufferAssignment, Convert HLO to LLVM  , compileToPTX, Generate GpuExecutable(ptx文本以字符串的形式保存于                GpuExecutable对象中), 
+第三步，executable.Run()   
+    a.	分配device buffer(BFC allocator) XLA有调用自己的runtime实现（bfc allocator）在device上面分配buffer
+    b.	Get cuda kernel from ptx(cuda runtime)
+    c.	Execute kernel (cuda runtime) 
+
+5. 
+Eigen3 :
+external/eigen_archive/unsupported/Eigen/CXX11/src/Tensor/TensorBase.h
+http://eigen.tuxfamily.org/index.php?title=Main_Page
+https://github.com/RLovelett/eigen/tree/master/unsupported/Eigen/CXX11/src/Tensor
+https://eigen.tuxfamily.org/dox/unsupported/index.html
+
+=====Tensorflow quantum  量子机器学习======
+NLP embedding    vs  张量网络   张量表达信息更多 但存储猛增
+学界： 张量网络可解释 从物理角度
+量子硬件搞不定非线性 只能搞线性，   tensor network 是用来模拟量子硬件的行为
+搞定精度 收敛是第一步 然后是速度
+张量网络 其实是矩阵分解  3D矩阵
+
+
+====预训练语言模型====
+对语言意义数字化
+one hot embedding   两两正交如何表示相近意思的词
+改进：  分布式表达  word2vec   国王 - 男人 + 女人 = 女王
+BERT 语境相关的语言意义数字化
+   珍贵的标注语料  -> 预训练模型
+华为语音助手   苹果siri  小米小爱
+谷歌眼红BERT将搜索提升10%
+BERT encoder     GPT decoder
+语境就是词和词的关系   ->  attention   Q K V
+
+BERT encoder   
+    自编码结构
+    transformer encoder
+    自然语言理解， 文本分类
+    推理速度很快
+GPT decoder
+    自回归结构
+    transformer decoder
+    自然语言生成任务  写诗 文章
+    相对慢
+
+模型趋势：
+   训练任务创新： MT-DNN, SpanBERT
+   训练流程创新：   ERNIE
+   模型结构创新：  ALBERT， XLNET
+模型规模：
+   英伟达 Megatron-LM  83亿    GPT模型   ，   8路（8个GPU）模型并行， 64路（8组GPU 每组8个）数据并行   allreduce集合通信
+   微软 Turing-NLG   170亿    也是生成式GPT
+   谷歌 T5  110亿参数量        更复杂
+分布式训练架构极为不同
+一个32G v100只能装10亿参数模型
+
+英伟达 Megatron-LM  83亿    GPT模型   ，   8路（8个GPU）模型并行， 64路（8组GPU 每组8个）数据并行   allreduce集合通信
+1. 通过矩阵拆分来实现模型并行
+2. 每个P计算矩阵乘法的一部份
+3. 两个相邻的矩阵乘法拆分，第一个矩阵沿着列拆分，第二个沿着行拆分
+4. 如此数学上符合矩阵分块运行规则 避免额外通信
+
+微软 Turing-NLG   170亿    也是生成式GPT
+ 核心技术： ZeRO-os  分布式训练内存优化技术  一个计算设备可以容纳更多参数
+算的时候需要，不算的时候其实不需要，不用放在显存。
+1. N to N Parameter server 架构
+2. 需要计算时再搜集或广播相应数据
+3. 即时清空冗余内存
+通信次数broadcast, reduce会非常多
+天生适合大模型
+
+谷歌 T5  110亿参数量        更复杂
+将NLP一切问题统一到 序列到序列 问题
+分布式训练： 模型平行+数据并行
+内存优化技术：  AdaFactor Optimizer
