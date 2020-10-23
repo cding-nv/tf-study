@@ -1,1 +1,180 @@
 QUARTZNET: https://arxiv.org/pdf/1910.10261.pdf
+
+============Eigen=====================
+Eigen是一个高层次的C ++库，有效支持线性代数，矩阵和矢量运算，数值分析及其相关的算法；
+Eigen适用范围广，支持包括固定大小、任意大小的所有矩阵操作，甚至是稀疏矩阵；支持所有标准的数值类型，并且可以扩展为自定义的数值类型；支持多种矩阵分解及其几何特征的求解。
+Eigen采用源码的方式提供给用户使用，在使用时只需要包含Eigen的头文件即可进行使用。之所以采用这种方式，是因为Eigen采用模板方式实现，由于模板函数不支持分离编译，所以只能提供源码而不是动态库的方式供用户使用。
+它不支持非线性优化，多项式解算器，快速傅立叶变换等
+
+Eigen库的模块
+1. dense matrix and array manipulation
+       The matrix class
+       Matrix and vector arithmetic  矩阵和向量算法
+       The  Array class and coefficient-wise operations 数组和协同操作
+       Block operations 块操作
+       advanced initialization 
+       reductions, visitors and broadcasting 
+       inferfacing with raw buffers: the map class
+       reshape and slicing
+       aliasing
+       storage orders
+       alignment issues
+2. dense linear problems and decompositions
+       linear algebra and decompositions 
+       catalogue of dense decompostions   密集分解
+       solving linear least squares systems 最小二乘法线性求解器
+       inplace matrix decompositions 原地矩阵分解
+       benchmark of dense decompositons 密集分解benchmark
+3. sparse linear algebra
+          sparse matrix manipulations   稀疏矩阵操作
+          solving sparse linear systems  稀疏线性求解
+          matrix-free solvers  矩阵自由求解
+4. Geometry  几何结构
+        space transformations 2D 3D空间旋转
+
+Eigen  库提供的接口
+Eigen提供丰富的接口给用户调用，包括基础数学计算接口， BLAS和LAPACK接口和Sparse接口等；同时Eigen的BLAS和LAPACK接口还可以跟第三方库对接
+
+eigen基础运算接口   Eigen blas接口   egien lapack接口  eigen sparse接口
+         core      blas/lapack(MKL/MAL)
+C++模板实现
+
+Eigen对BLAS/LAPACK的使用方式是：如果计算数据比较小，就直接采用自己的函数实现，如果数据量比较大，就使用第三方加速库
+
+Tensoflow 软件栈使用Eigen
+c++API -> Tensorflow framework -> Ops -> Eigen -> BLAS/LAPACK(MKL/MAL)
+
+TensorFlow的运行时包含400多个标准的OP，包括数值计算，多维数组操作，控制流，状态管理等。每一个OP根据设备类型都会存在一个优化了的Kernel实现。在运行时，运行时根据本地设备的类型，为OP选择特定的Kernel实现，完成该OP的计算。
+其中，大多数Kernel基于Eigen::Tensor实现。Eigen::Tensor是一个使用C++模板技术，为多核CPU/GPU生成高效的并发代码。但是，TensorFlow也可以灵活地直接使用cuDNN实现更高效的Kernel。
+
+Tensorflow core:  runtime -> operation -> kernel -> Eigen -> BLAS/cuBLAS/cuRAND/cuDNN -> cpu/gpu/RPC/RDMA
+
+Eigen 库优缺点
+C++编写，易读，易理解   ；           必须要开源
+模板接口丰富，方便调用   ；            C++实现，性能相比C实现要差
+数据定义灵活，矩阵定义可以不用指定矩阵维度，可以在运行时再定大小 ；      只是针对CPU来实现，扩展性不好
+跟TensorFlow原生对接，TensorFlow的C++算子就是用Eigen实现的；支持的BLAS、LAPACK接口不全
+支持的接口丰富，支持BLAS、LAPACK和SPARSE接口； 多线程的支持不好
+支持SSE（X86），NEON（ARM）架构优化
+可以对接第三方加速库（如：MKL/MAL）
+Eigen定义的数据结构可以被CUDA的编译器直接编译使用
+
+Eigen和BLAS库的比较
+Egien 接口提供很多模板；接口不是很全面；C++实现性能较低；多线程性能较差； 原生支持tensorflow；必须开源
+BLAS 固定的接口；接口较齐全；C实现性能好；多线程性能较好；需要修改适配tensorflow；不必开源
+
+D优化Eigen建议
+从深度学习框架角度：
+1、TF中所有用C++实现的针对CPU的算子基本上都是使用Eigen的函数来实现的，代码比较复杂，耦合比较大，不适宜做大范围的修改；
+2、对需要放到D中处理的DNN算子或者Layer，建议另实现一个针对D的相同功能的DNN算子或者Layer，通过配置或者运行时判断来调用合适的算子或者Layer。
+从Eigen的角度来分析：
+1、Eigen是基于C++来实现的，主要还是针对CPU的实现，函数实现可以基于CPU架构去优化（SSE和NEON），对计算较为耗时的函数，即BLAS、Lapack等部分可通过第三方库，如MAL、MKL库进行加速。
+2、Eigen基于模板的实现机制提供了灵活方便的调用方式，建议保留；但这也使得调用方式相对固定，对库的加速和优化空间主要体现在函数、算法自身功能的优化实现上
+
+BLAS
+每年做超级计算机的排行榜，都要做LINPACK测试，该测试很多部分就是做BLAS 3级矩阵和矩阵的计算。此外，还有很多科学和工程的模拟，在转换后都变成了一种矩阵上的操作。如果你把矩阵优化的特别好的话，对整个应用的提升，都是非常有帮助的。
+BLAS与 Deep Learning 的关系，深度学习这几年火了之后，比如大家非常了解的Alexnet，如果做具体的性能划分，PPT上的这张图来源于某篇论文，cut down之后看每个部分花了多少时间，发现它大部分的时间花费在卷积层（Conv Layer），另外不少时间花在了全连接层（FC layer）。卷基层目前通用的实现是展成矩阵，变成矩阵与矩阵的乘法，就是BLAS 3级。而全连接层一般是变成一个矩阵和向量的乘法，也落成了BLAS操作。
+也就是说，基于矩阵类学习的深度学习，有90%或者更多的时间是通过BLAS来操作的。当然，随着新的算法出现，卷积层对3*3的卷积核有专门的算法，或者用FFT类类算法也可以做，但是在通用上，展矩阵来做也非常广泛。
+目前，BLAS只是一个定义了的实现接口，但是具体的实现其实有很多种。从商业的角度来讲，存在很多商业版本，比如说 Intel、AMD、NVIDIA、IBM公司等，基本上为了搭配自己的硬件，对其做了更优的优化，出了商业版本
+  
+MKL  Intel Math Kernel Library 工程和金融应用程序优化的数学例程的库。核心数学函数包括BLAS，LAPACK，ScaLAPACK，稀疏求解器，快速傅立叶变换和矢量数学。该库支持Intel处理器，可用于Windows，Linux和macOS操作系统
+MAL Math acceleration library 是基于自研芯片(kirin Taishan)的基础数学库集合，包含BLAS/LAPACK/FFT/SparseBLAS/clBLAS/RNG等基础数学库. MAL是基于底层硬件平台进行优化过的基础数学库，是很多深度学习、机器学习、视觉计算等算法库的基础库，MAL与硬件结合更加紧密。MAL对标Intel MKL，已有BLAS、LAPACK、FFT函数库，后续会逐步增加SparseBLAS等
+MAL Kirin
+MKL x86
+ATLAS 通用
+Eigen 通用
+ARMPL 公版ARM
+openBLAS 通用
+典型函数性能对比实测（AXPY、DOT、SCAL、GEMV、GEMM）
+============Eigen=====================
+
+
+
+
+=======================cudf========================
+https://cloud.tencent.com/developer/article/1516318 使用cuDF在GPU加速Pandas
+
+https://luisstruggle.github.io/blog/GPU_CPU_CUDA.html  简介。GPU的众核架构非常适合把同样的指令流并行发送到众核上，采用不同的输入数据执行 （NVIDIA Fermi有512个核）
+
+https://www.zhihu.com/question/46400432  cuda原理
+
+https://www.leiphone.com/news/201908/zUgdev4g0tnjRw9l.html  GPU上的数据加速
+
+Pandas 的基础代码是用 C 语言编写的，它可以很好地处理大小超过 100GB 的数据集，CPU上运行
+
+DASK是一个可以将Python软件包扩展到多台机器上的工具，可以在同一系统或多节点群集中的多个GPU上分布数据和计算，同时可与RAPIDS cuDF，XGBoost和RAPIDS cuML集成在一起，用于GPU加速的数据分析和机器学习。
+
+RAPIDS是针对数据科学和机器学习的GPU加速平台，为数据科学家提供标准化的流水线式工具。所有RAPIDS库都基于Python。RAPIDS的结构是基于不同的库来实现数据科学从数据清洗到数据建模的端到端的加速。
+
+https://www.jianshu.com/p/ae468d9957c9  Cub库
+https://github.com/NVIDIA/jitify 
+
+开源项目：
+https://github.com/rapidsai/cudf/tree/branch-0.16/cpp/src
+
+https://docs.rapids.ai/api/libcudf/stable/group__copy__slice.html slice的操作
+
+thrust::distance(unique_indices.begin<cudf::size_type>(), result_end))     之间的元素个数
+
+https://docs.rapids.ai/api/libcudf/nightly/group__copy__gather.html gather的操作
+
+https://wangpengcheng.github.io/2019/04/17/nvcc_learn_note/  nvcc learning
+
+https://docs.rapids.ai/api/rmm/nightly/device__buffer_8hpp.html   device_buffer docs的API gpu上申请buffer
+https://docs.rapids.ai/api/rmm/stable/classrmm_1_1mr_1_1device__memory__resource.html   rmm::mr::device_memory_resource docs的API  gpu的malloc
+
+https://docs.rapids.ai/api/libcudf/stable/group__copy__slice.html slice的操作
+
+thrust::distance(unique_indices.begin<cudf::size_type>(), result_end))     之间的元素个数
+
+https://docs.rapids.ai/api/libcudf/nightly/group__copy__gather.html gather的操作
+
+Sort.cu & sort_imlp.cu（ sorted_order ）
+      thrust::sort(rmm::exec_policy(stream)->on(stream),
+                   mutable_indices_view.begin<size_type>(),
+                   mutable_indices_view.end<size_type>(),
+                   comparator);
+
+https://docs.rapids.ai/api/libcudf/stable/group__copy__slice.html slice的操作
+
+thrust::distance(unique_indices.begin<cudf::size_type>(), result_end))     之间的元素个数
+
+https://docs.rapids.ai/api/libcudf/nightly/group__copy__gather.html gather的操作
+
+https://www.leiphone.com/news/201908/zUgdev4g0tnjRw9l.html  如何在 GPU 上加速数据科学
+
+
+Tesla V100的芯片面积有815平方毫米，一共有210亿颗晶体管，搭载了84个SM（流多处理器）单元，其中有效单元是80个。 每个SM单元中有64个单精度的处理单元CUDA Core以及8个混合精度的矩阵运算单元Tensor Core，总共有5120个CUDA Core和640个Tensor Core。
+
+https://blog.csdn.net/he_wolf/article/details/23502793
+https://blog.csdn.net/LG1259156776/article/details/52724862?utm_source=blogxgwz5&utm_medium=distribute.pc_relevant.none-task-blog-title-2&spm=1001.2101.3001.4242
+
+https://blog.csdn.net/sinat_26917383/article/details/104504600
+
+https://zhuanlan.zhihu.com/p/96089089 
+
+https://docs.rapids.ai/api/rmm/nightly/device__buffer_8hpp.html  device_buffer
+
+1、内存对齐，对变量的内存对齐进行标注，以便合理的安排内存的布局和访问。
+alignas(128)    char cacheline[128]
+
+新扩展的operator new，会带一个std::align_val_t的（整型）参数，表示内存对齐的大小。编译器在看到operator new时，会根据alignas的要求，自动调用带内存对齐的operator new
+2、内存定域性
+object的内存地址物理上要尽量相邻，存取时序上也要相邻。这样cache的性能才会好
+
+3、内存碎片
+当我们不断分配、回收不同大小内存的时候，会发生明明还有足够空间，但因内存分布过于散乱，导致较大内存无法分配的情况。这就是内存碎片化了
+
+4、内存扩散（memory diffusion）
+我们以std::list为例，假设我们在连续的内存上顺序插入节点，构造了一个长长的list。这时遍历整个list是非常快的。随后我们不断地随机shuffle这个list，完成后整个list还是在这块内存上。但是这时遍历整个list是非常慢的！因为我们不是在顺序读取内存，而是在随机读取内存！这个问题就是memory diffusion，它破坏了访问时序上的连续性。
+
+一个程序运行时间长了以后，不只是会出现内存碎片、内存扩散也是一个同样重要的问题
+
+5、内存分配场（memory arena）
+所谓memory arena，就是预先分配一大块内存（arena）。然后在这块内存上，继续sub-allocate小一点的内存，构造我们需要的对象。
+在这些对象全部使用完之后，我们不需要调用对象的析构函数，可以直接释放内存。只要保证以后不再使用这些对象即可。这样就节省了析构函数的开销，非常高效。
+
+6、std::pmr::memory_resource
+pmr::memory_resource主要是做了这么一件事情，它将内存的分配与内存的来源解耦了。allocator负责具体分配，而内存来源由memory_resource决定。
+
+=======================cudf========================
