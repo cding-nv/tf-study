@@ -367,3 +367,175 @@ GPT decoder
 将NLP一切问题统一到 序列到序列 问题
 分布式训练： 模型平行+数据并行
 内存优化技术：  AdaFactor Optimizer
+
+
+====模型压缩====
+  pruning， quantization， huffman encoding
+
+在频域上的模型压缩技术
+    input data -> DCT bases -> DCT feature maps  -> weighted combination -> feature maps of this layer
+   DCT 是正交的变换
+基于对抗学习的知识蒸馏方案  AAAI 2018
+   教师神经网络 <--判别器度量特征空间上差异性---> 学生神经网络    
+进化自动剪枝和量化  KDD 2018
+   利用遗传算法对神经网络中冗余信息进行自动演化   -> 通道个数的搜索， 权值和特征的量化， 支持帕累托前沿的搜索
+针对生成模型的协同进化压缩算法
+   在cycleGAN中的生成器网络将会被同时压缩
+高效的单元和结构设计
+    多用卷积核： 空间多用卷积核； 用共享模板生成子卷积核； 通道多用卷积核； 用独用模板生成的子卷积核
+    乐高卷积核
+GhostNet 业界性能最好的端侧AI架构
+    用来构建轻量神经网络架构的Ghost模块
+    shuffleNet, mobileNet, ghostNet, FE-net, FBNet, 
+AdderNet: 用加法代替乘法的深度神经网络
+    卷积本质上也是一种度量函数  余弦相似度
+    加法神经网络 BNN AddNN      乘法神经网络 CNN
+
+神经网络架构搜索  neural arch search  
+    EfficientNet
+    基于连续进化的神经网络架构搜索算法   该算法可以在运行一次之后输出在 帕累托前沿 上的所有模型
+    轻量的超分辨率模型架构搜索
+    二值神经网络的等价问题
+
+保护用户隐私
+   data-free 方案  无需任何训练数据做压缩   iccv 2019
+   在云上的  PU 压缩方案仅需要一小部分训练数据   NeurIPS 2019
+
+模型蒸馏： 去掉原始网络中的光流模块
+神经元剪枝  降低视频生成器的计算复杂度
+算子优化
+模型适配
+
+
+====深度强化学习====  
+   深度学习具有较强的感知能力， 强化学习具有决策能力。 两者结合，为复杂系统的感知决策问题提供解决思路
+
+
+Dropout：Dropout通过定义的概率随机地将某个隐藏层神经元的输出设置为0，那么这
+个神经元就不参与前向传播和反向传播，下一次迭代中又会根据概率重新对某个神经元输出
+置0。
+目标检测中衡量识别精度的指标AP（average precision）是指在多个类别物体检测中，每一个类别都可以以召回率和准确率作为横纵轴绘制一条曲线，AP 就是该曲线下的面积，mAP 是多个类别AP 的平均值
+
+
+====GNN算法 graph neural network====
+GCN的一个基本流程，首先是构图，采样邻居，信息传递、信息聚合、节点更新，来获取更好的用户和物品的表达
+众多业务场景可以抽象为图graph上学习的问题
+racket - holding - woman 抽象互动关系
+edge node global  三个层次的互动 
+
+1. cnn有规律（regular structured data）   依赖性没有规律（irregular structure data）
+
+graph data 特征：
+没有限制 neighborhood 是多少
+
+2. Network embedding vs GNNs
+   gnn 权重共享
+   图嵌入需要
+
+CNN vs GCN  Graph-CNNs
+Graph-CNN： 
+1.  图的空间域， weight sharing， 也有扩大感受野
+2.  不同neighbors 提取特征
+3.  池化  graph coarsening
+
+Graph Neural Networks in a Nutshell
+1. Sample 邻居采样 ， k=1的邻居， k=2的邻居，一跳 二跳，  随机采样， 邻居不够就上采样   邻居太多就下采样， 这一步最耗时
+2. Aggregate feature info from neighbors  邻居聚合 邻居特征
+3. Combine  和自身特征 concat   .   Predict graph context and label using aggregated info.  中心节点有 degree， 比如邻居比较多 说明比较重要
+
+GraphSAGE  Thomas 2017 NeurlPS
+Message Passing Graph Neural networks  消息传递 增加边上的特征
+
+Pinterest  recommend related Pins to users 工业应用 
+Pin: A visual bookmark someone has saved from the internet to a board they've created.
+pin: Image, text, link
+visual     ->推荐看上去像的
+Random walk  -> 推荐  蔬菜
+GraphSAGE   -> 节点特征 top结构关系 推荐的更靠谱
+
+滴滴出行  对下一时段区域叫车人数预测
+predict the Ride-Hailing Demand. Improve vehilcle utilization, reduce the wait-time, mitigate traffic congestion.
+approach: spatial dependency modeling
+1. 两个节点即区域关系 neighborhood， 公园办公区域 功能信息类似 func similarity， 公交相连 connectivity， 三种不同信息 encode pair-wise correlations between regions using multiple graph.
+2. aggregat different observation with contextual Gated RNN   捕捉时序上的特征
+3. Capture spatial dependency with graph convolution on multiple graphs  
+4. Generate prediction
+
+蚂蚁金服
+异常 malicious accounts 检测 in the online cashless payment system at Alipay
+Limitation: the current design of the receptive field is more or less hand-designed (either one-hop neighbors or K-hops neighbors)
+Novelty: Adaptive receptive fields of neural networks.
+用户登录信息 或 设备 手机 平板    每次登录就是一个边 某一个账号在很多设备上登录的话 那就是high risk 账号
+当一个设备登录了很多不同的账号 同样 high risk
+朋友信用如何
+
+淘宝 基于异构图的大规模推荐搜索系统  Fan et al. KDD 19    交互更复杂，
+Tencent  朋友圈新闻推荐  大规模数据高效采样策略   wu et al. WWW 19; Huang et al. NeurIPS 19
+滴滴出行：  基于GNN时空预测  Geng et al. 2019
+
+Uber 多伦多   交互关系行为预测  未来行程轨迹预测  Liao et al. arvix 19
+DeepMind  伦敦  蒙特利尔   关系性强化学习，多智能体
+Facebook  图注意力机制算法应用   社交网络节点行为预测   boy （wear shirt， use helmet，has band， wear pants， hover skateboard）
+
+Tencent TGraph
+Facebook pytorch-BigGraph
+ali -  Euler 图计算平台
+ali 达摩  AliGraph
+亚马逊 Web Service  Deep Graph learning
+huawei: 图引擎服务  graph engine service
+蒙特利尔  是学术界图神经网络研究中心
+    https://jian-tang.com    https://williamleif.github.io
+
+传统深度学习模型仅仅考虑了user和item的特征，没有显式考虑连接关系
+已有的GCN方法没有考虑到user和item属性的不同，用相同的方式聚合信息
+已有的GCN方法使用二部图仅仅直接建模了user-item连接关系，user-user, item-item连接关系也很重要
+利用GCN来同时考虑user, item的特征以及user-item的连接关系
+对于user和item使用不同的聚合函数
+显式建模user-user, item-item连接关系
+
+huawei应用市场推荐系统 分两步  召回 和 排序
+1 召回：粗排选取核实每个用户的内容  只推潜在的前100个可能的app 
+2 排序：CTR预 精排 使用一个点击率预估模型对召回的内容进行排序   点击率预估是广告技术核心算法之一， 精确的用户点击预测可带来巨大收益
+目标： 利用基于图神经网络的推荐搜索模型生产精确的embedding， 完成对用户选集app生产
+关键难点： 1. 不是同构图   是异构 的   有两类不同的节点：    既有user 节点  又有 item节点
+ 3.  有很多top结构 多重相关性  有user-item下载  点击， user 年龄， iterm-iterm之间 都是射击游戏 体育游戏
+4. 增量训练  灾难性遗忘， 只当当天的训
+input embedding  ：   fiel -> 年龄 性别   离散化的数据连续化的方法
+multi-graph encoding (user graph, item graph) -> skip-connection -> user embeding update / item embedding update -> info fusion , pairwise BPR loss
+
+优化点：
+1. 图表征 离散 稀疏性操作  sparse ->dense  频域？  采样，不采样也不行  cpu开很多work来做，拿到index去访问特征   90%时间
+2. 采样  index 特征  比较大的cpu找出来 再聚合  memory 访问 random，  cpu-gpu 通信
+3.  out of memory  采用的  mini-batch 来采样
+DSSM 召回  把每一个维度特征学一个   embedding 
+
+基于图神经网络的对无线网络场景建模  mobility robustness optimization MRO 负载均衡
+流量预测 小区  traffic prediction
+
+基于图神经网络对抗攻击 异常节点检测
+含有拓扑探索的图神经网络  对错误连接比较敏感  或者重要关系没有连接，  提出动态更新拓扑结构的概率
+
+cpu 生产者 最大的访问带宽 embedding -> gpu消费者
+生产者 消费者  异步  buffer 维护好， 不要随机乱访问， 总是互相等也不行， cpu带宽会是瓶颈
+
+QA
+
+1. 为什么不直接采用训练时的model进行预测，而是把item embedding存起来，利用最近邻搜索的方法：
+对每个用户，在线上推理的时候对几千个候选集逐一跑一遍模型的时间开销太大
+
+2. 为什么不直接把user embedding存起来，线上推理的时候直接读取使用
+对于应用市场游戏推荐业务，有上亿的用户，全部存起来需要50G+的内存，线上服务器撑不住
+
+3. 为什么item侧用GCN，而user侧用的仍然是DSSM模型
+User如果在线实时计算，需要80G+的显存，线上服务器撑不住
+
+4. 为什么item侧使用了item ID作为特征，user侧没有使用user ID作为特征
+如果把user ID进行编码作为特征，featureMap需要占用6G以上内存，线上服务器撑不住
+
+5. 为什么GCN在训练过程中GPU利用率不能达到100%
+训练速率快于采样速率，GPU需要等待CPU采样完成再进行训练
+
+6. 为什么不用GPU来做采样
+（1）邻居数目呈长尾分布，用GPU采样需要固定维度，丢失了邻居信息； （2）邻接表存储需要100G+的显存，GPU扛不住
+
+
