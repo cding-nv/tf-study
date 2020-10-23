@@ -539,3 +539,150 @@ User如果在线实时计算，需要80G+的显存，线上服务器撑不住
 （1）邻居数目呈长尾分布，用GPU采样需要固定维度，丢失了邻居信息； （2）邻接表存储需要100G+的显存，GPU扛不住
 
 
+
+
+====autoML====
+工具化  工具包
+硬件在环
+网络架构搜索
+SPNet  SP-NAS 搜索得到自动驾驶最大开源行人检测
+屏下指纹识别 大屏手势识别  
+SM-NAS
+BOSS  一种普适高效超参数优化
+Ada-loss  动态多损失自适应
+AutoFeature 自动化特征工程
+Auto-FPN  自动物体检测新框架
+Auto-Lane 车道线网络搜索
+元学习  meta-selector  电池充电管理  电池处于膨胀态会降低电池寿命  苹果iphone12会有改善
+
+算子搜索  元强化TESP算子自动搜索
+schedule  多线程  轴切分
+模板针对性差
+xgboost对固定算子shape搜索 无法解决 算子shape  快速开发
+
+基于Task 去学  
+
+
+
+
+====3D CNN及CV进展====
+
+multi-view 3D object Detection
+Lidar bird view  -> conv 
+front view   -> conv
+image  ->  conv               -> 3个融合fusion     -> 3D box
+第一种方法是MV3D，它使用激光雷达点的鸟瞰图、前视图以及前向摄像头的RGB图像。 网络由三个输入分支组成，每个输入使用基于VGG的特征提取器。 首先基于鸟瞰视图特征生成的3D proposals，然后将proposals投影到激光雷达的前向视图和RBG图像。 经过ROI pooling提取对应视图的特征。 接下来将这些由proposals提取的特征进行融合，不同分支的特征可以进行分层交互，提出了三种融合方案：前融合、后融合以及深度融合。 由最终融合后的特征输出分类结果和回归3D边界框。 研究了不同模态的特征以及三种的融合方法，并得出深度融合方法获得了最佳性能，因为其提供了更灵活的方法来聚合来自不同模态的特征。
+
+3D anchor
+
+joint 3D proposal generation and object detection from view aggregation
+第二种方法是AVOD，它使用激光雷达鸟瞰图和RGB图像，利用FPN网络得到二者的多分辨率feature map，然后将激光雷达点云定义的anchor分别投影到鸟瞰图和RGB图像并crop出相应的特征，使用前融合方法将两个分支的特征进行外积，得到双线性特征，与MV3D不同的是没有使用Roi polling，而是crop and resize操作，得分最高的proposals被重新采样并投影到相应视图，最后合并各个模态的特征，并且经FC层为每个proposal输出类别概率以及回归3D框。 通常，在卷积阶段后分辨率的降低会影响小物体的检测。 作者通过使用FPN网络对特征图进行上采样来规避这一问题。
+
+越近的点 稠密   越远的点 稀疏
+基于分割的方法解决  前景
+pointRCNN  3D 框  前景区域划分，  3D refinement
+Pointrcnn是港中文在ICCV2019提出的。
+主要的创新点是：
+对于前景点做分割
+对于分割出的前景点取3D proposal, 增加效率以及准确率
+2-stage + refine
+1. 首先Point-rcnn使用多尺度的point++作为backbone生成各个点云的特征，
+2. 基于此特征pointrcnn首先做了前景点分割，
+3. 后续基于前景点分割得到的前景点直接生成3D proposal.
+后续通过对提出proposal内部的点的pointnet++特征以及点在对应以车中心点为坐标原点的坐标拼接在一起，回归出最新的3D框。
+实验结果显示 基于点云分割得到的前景点回归得到的3D框去做ROI-pooling，再继续做refine的结果相较于单阶段在Car上提升了较大幅度。
+
+基于Pointrcnn进行的改进版本，同样由港中文大学提出，目前在kitti榜中排行第十
+内部点云按照各个部分(左上，左下等)分割
+Roi-aware pooling，由于上述BEV图中显示的模糊性，无法使用先前的点云池化方法恢复原始边框形状。 提出的Roi pooling方法可以通过保持空体素来编码边框形状（见后）
+
+通过BEV特征图去提取3D proposal。
+点云分割及part预测(该点云是在左上，左下…)
+再分别通过maxpooling以及avgpooling特征的融合来预测refine后的3D框。
+Roi pooling:
+再说Roi pooling特征池化。 由于上述BEV图中显示的模糊性，无法使用先前的点云池化方法恢复原始边框形状。 提出的Roi pooling方法可以通过保持空体素来编码边框形状。
+实验结果看出：
+Roi-aware pooling 以及 稀疏卷积对于实验结果的影响。
+同样这篇文章也总结了现有3D检测的瓶颈主要在于localization.
+
+同样也是由港中文大学提出，目前kitti排行第三的检测模型。
+主要的创新点是
+1. 用了球形anchor.
+2. 使用了3D IOU的分支
+3. Points Pool中同时整合了基于单个点云及voxel的特征
+STD sparse-to-dense 3D object detector for point cloud
+使用球形anchor的原因是球形anchor考虑到了物体所有的角度
+首先通过pointnet++提取特征，做前后背景点分割
+将分割的得分作为各个anchor的score进行nms.
+对于nms后的anchor进行特征提取，然后做3d proposal提取
+对于提取后的proposal做voxel-based pooling, 
+同时有一个预测iou的分支，用iou得到的分数乘上分类的得分作为最终排序的分数
+各种实验结果
+Semantic特征是基于poinet++提取出的特征，canonized是转换到以车中心点为坐标系下的3维坐标特征。
+
+
+
+Frustum 稀疏怎么解决， 投影到2D  roi   椎体  -》 3D  box  回归
+Frustum convNet  多尺度 多分辨率  再分类回归  50米远 小物体  2D框影响检测结果
+
+VoxelNet  end-to-end learning for point cloud based 3D object detection
+4维 -> 3维卷积
+稀疏卷积层  sparsely embedded convolutional detection 卷积之后保持稀疏
+
+
+
+
+pointPillars
+
+multi-view   MV3D  -> AVOD
+frustum    F-pointnet -> F-convNet
+3D-IoU loss  MEGVII  PV-RCNN
+Point cloud : VoxelNet  ->spconv -> second -> 2dconv -> pointPillar
+segmentation:  pointRCNN -> part-A的平方  STD
+
+MEGVII 开源的  BRAVE and 
+   本论文目前位于nuscenes数据集榜单第一名
+针对nuscenes数据集类别数量极不均衡的情况，本论文提出了以下方法：
+1， 数据预处理阶段：
+      对场景进行重采样，提高含有较少数量类别的场景比例
+      将点云场景中的gt框内的点云拷贝到其他的场景中，（需要检测地面的存在，将点云放置到正确的位置上），进行数据增强
+模型设计阶段：
+      最终预测的header部分使用multi head，将类别根据数量、大小分为不同的6个类别进行分别预测
+
+
+
+PV-RCNN  point-voxedl  feature set abstraction for 3D object detection
+PV RCNN 模型将voxel based与point based模型结合起来
+首先，利用voxel based模型的思路，将原始点云转化为voxel，并对每个voxel提取voxel特征
+对voxel特征得到的feature进行3D 卷积，然后将最后一层卷积结果在z轴方向concat起来生成bev的feature，在此基础上为每个位置每个类别生成互相垂直的两个anchor并预测其分类与位置回归的预测
+利用point based模型思路，利用FPS（furthest point sampling）算法提取keypoint 点云，以这些采样得到的点云为球心，利用pointnet思路将其邻域内的voxel feature（第2步）abstract 为一个固定长度的feature，与keypoint本身的feature concat起来。
+
+多模态自监督对比学习
+基于多特征输入的多模态3D检测模型
+
+
+
+====TVM====
+NNVM：将不同框架的工作负载表示为标准化计算图，然后将这些高级图转换为执行图
+TVM 提供一种独立于硬件的特定域语言，以简化张量索引层次中的运算符实现. 
+设计一个算子，通过TVM软件框架，最终得到cce代码（接近机器上的代码）。TVM考虑了数据在内存中的分配管理过程，将整个算子的过程拆分出数据搬移和计算两类pipeline
+整体架构
+1. DSL  原语描述算子计算过程；原语描述算子IR调度过程    compute；schedule
+2. Computation过程，是制定算子的计算规则，这部分只是进行数据之间的计算，没有数据搬移存储的过程，不能充分利用专用硬件的并行性
+3. scheduling optimization & optimization pass   调度优化，IR转换； Pass优化，数据搬移，内存复用，指令替换，同步指令插入等
+          optimization： split axis, achieve better data locality; can bind operation to GPU's blockID and threadId, achieve parallelization; fuse two consecutive axises of one computation; reorder the axises in the specified order, achieve better data locality; Mark one stage as inline, then the body of computation will be expanded and inserted at the address where the tensor is required;  Move computation of one stage to the root; Cache everything; Split reduce_axis and axis, achieve better data locality;  Can bind operation to GPU’s blockId and threadId, achieve parallelization; Cross Thread Reduction
+   schedule 分两部分  数据流管理和数据切换
+    数据流管理，将数据分成搬移和计算两个过程，这样就可以实现流水线映射（pipeline管理），数据流管理通过TVM中的cache_read和cache_write的方法，将数据从ddr先搬移到UB（内存），再将数据进入计算单元进行计算
+    数据切块是因为片上内存的大小有限，ddr上的数据比较大，不能全部搬移到内存中，所以需要切块。后期，我们将数据切成更小的块时，可以实现流水，流程图如下，可以与上面的数据流管理，未进行数据切块的流程图进行对比
+4. codegen    后端代码生成  CCE C 文件        Tensorize机制，将计算语句映射成计算指令
+5. intrinsic / cuda-c / LLVM IR       CCE compiler 生成二进制文件，加载到AI-core
+
+====TBE====
+TBE是在TVM（ Tensor Virtual Machine ）框架基础上扩展的算子开发工具，包括了特性语言（Domain-Specific Language，DSL）模块、调度（Schedule）模块、中间表示（Intermediate Representation，IR）模块、编译器传递（Pass）模块以及代码生成（CodeGen）模块。
+TBE算子基于python语言编写，经过TBE编译工具编译后，会生成目标文件.o。在学习TBE课程的过程中，大家会了解到，TBE算子实际上是将算子python文件编译成CCEC（Cube-based Computing Engine C ）代码文件，再通过ccec编译器将CCEC文件编译成目标文件。而我们之前学习的CCE-C认证培训课程，就是教大家怎么去手写CCEC文件。从这里我们可以看到，CCE其实是TBE算子开发方式的基础，TBE是将CCE做了一层封装。TBE中三种不同的开发方式，分别为DSL、schedule和TIK，这三者对CCE的封装程度依次降低，开发难度依次提高，当然性能调优的空间也就越大。在后续TBE算子开发过程中，包括复杂功能的定位和性能的调优，都依赖cce知识。
+CCElib方式： 入门难度高，程序员直接使用提供的intrinsic C API，面向硬件架构编程，需熟练掌握CCE的各语言特性，包括buffer管理，时序同步，流水管理等，同时依赖版本框架，无法独立开发。
+CCEC自定义方式： 入门难度高，程序员直接使用提供的intrinsic C API，面向硬件架构编程，需熟练掌握CCE的各语言特性，包括buffer管理，时序同步，流水管理等
+DSL方式： TBE DSL编程难度低，易于使用，开发者无需关注调度机制。当TBE DSL无法表达时，需要使用更底层的Schedule与TIK方式进行算子开发。
+schedule方式：python 入门难度较高，开发者需要自己控制算子的调度流程，掌握如何用schedule原语完成buffer切分，才能获取比较好的性能。
+TIK方式： python  入门难度高，程序员直接使用TIK提供的API，面向Tensor编程，由TIK工具管理Buffer地址的分配及数据同步处理。TIK对矩阵的操作更加灵活，但需要手动计算数据的分片和索引，难度较Schedule方式更高。
+
